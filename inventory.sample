@@ -1,0 +1,39 @@
+# NOTE: Store real credentials in Ansible Vault or environment variables before running playbooks.
+# Example: export ANSIBLE_PASSWORD_REP_SCHEDULER and reference it as ansible_password="{{ lookup('env', 'ANSIBLE_PASSWORD_REP_SCHEDULER') }}"
+
+[rep_core]
+rep-scheduler ansible_host=10.20.10.10 ansible_user=ubuntu ansible_password="{{ lookup('env', 'ANSIBLE_PASSWORD_REP_SCHEDULER') }}"
+rep-live-session ansible_host=10.20.10.20 ansible_user=ubuntu ansible_password="{{ lookup('env', 'ANSIBLE_PASSWORD_REP_LIVE') }}"
+rep-quiz-engine ansible_host=10.20.10.30 ansible_user=ubuntu ansible_password="{{ lookup('env', 'ANSIBLE_PASSWORD_REP_QUIZ') }}"
+rep-practical-labs ansible_host=10.20.10.40 ansible_user=ubuntu ansible_password="{{ lookup('env', 'ANSIBLE_PASSWORD_REP_LABS') }}"
+
+[instructor_console]
+instructor-console ansible_host=10.20.20.10 ansible_user=ubuntu ansible_password="{{ lookup('env', 'ANSIBLE_PASSWORD_INSTRUCTOR') }}"
+
+[trainees]
+trainee-workstation-01 ansible_host=10.20.20.50 ansible_user=windows ansible_password="{{ lookup('env', 'ANSIBLE_PASSWORD_TRAINEE1') }}" ansible_connection=winrm ansible_port=5986 ansible_winrm_server_cert_validation=ignore
+trainee-workstation-02 ansible_host=10.20.20.60 ansible_user=windows ansible_password="{{ lookup('env', 'ANSIBLE_PASSWORD_TRAINEE2') }}" ansible_connection=winrm ansible_port=5986 ansible_winrm_server_cert_validation=ignore
+
+[reporting_workspace]
+reporting-workspace ansible_host=10.20.30.10 ansible_user=ubuntu ansible_password="{{ lookup('env', 'ANSIBLE_PASSWORD_REPORTING') }}"
+
+[ng_soc]
+ng-soc ansible_host=10.30.10.10 ansible_user=ubuntu ansible_password="{{ lookup('env', 'ANSIBLE_PASSWORD_NG_SOC') }}"
+
+[ng_siem]
+ng-siem ansible_host=10.30.10.20 ansible_user=ubuntu ansible_password="{{ lookup('env', 'ANSIBLE_PASSWORD_NG_SIEM') }}"
+
+[ng_soar]
+ng-soar ansible_host=10.30.20.10 ansible_user=ubuntu ansible_password="{{ lookup('env', 'ANSIBLE_PASSWORD_NG_SOAR') }}"
+
+[cti_ss]
+cti-ss ansible_host=10.30.30.10 ansible_user=ubuntu ansible_password="{{ lookup('env', 'ANSIBLE_PASSWORD_CTI_SS') }}"
+
+[cicms]
+cicms-operator ansible_host=10.30.40.10 ansible_user=ubuntu ansible_password="{{ lookup('env', 'ANSIBLE_PASSWORD_CICMS') }}"
+
+[playbook_library]
+playbook-library ansible_host=10.30.30.20 ansible_user=ubuntu ansible_password="{{ lookup('env', 'ANSIBLE_PASSWORD_LIBRARY') }}"
+
+[telemetry_feeder]
+telemetry-simulator ansible_host=10.30.50.10 ansible_user=ubuntu ansible_password="{{ lookup('env', 'ANSIBLE_PASSWORD_TELEMETRY') }}"

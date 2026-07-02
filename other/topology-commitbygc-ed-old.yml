@@ -1,0 +1,62 @@
+name: incidentresponse_kypo
+hosts:
+  - name: attacker
+    base_box:
+      image: kali
+      mgmt_user: debian
+    flavor: standard.small
+  - name: soc-server
+    base_box:
+      image: ubuntu-noble-x86_64
+      mgmt_user: ubuntu
+    flavor: standard.medium
+  - name: user-pc
+    base_box:
+      image: windows10-x64
+      mgmt_user: Administrator
+      mgmt_protocol: winrm
+    flavor: standard.medium
+  - name: internal-server
+    base_box:
+      image: ubuntu-noble-x86_64
+      mgmt_user: ubuntu
+    flavor: standard.small
+routers:
+  - name: corp-router
+    base_box:
+      image: debian-12-x86_64
+      mgmt_user: debian
+    flavor: standard.small
+networks:
+  - name: user-zone
+    cidr: 10.10.10.0/24
+    accessible_by_user: False
+  - name: soc-zone
+    cidr: 10.10.20.0/24
+    accessible_by_user: False
+  - name: attacker-zone
+    cidr: 10.10.30.0/24
+    accessible_by_user: True
+net_mappings:
+  - host: user-pc
+    network: user-zone
+    ip: 10.10.10.50
+  - host: internal-server
+    network: user-zone
+    ip: 10.10.10.60
+  - host: soc-server
+    network: soc-zone
+    ip: 10.10.20.10
+  - host: attacker
+    network: attacker-zone
+    ip: 10.10.30.10
+router_mappings:
+  - router: corp-router
+    network: user-zone
+    ip: 10.10.10.1
+  - router: corp-router
+    network: soc-zone
+    ip: 10.10.20.1
+  - router: corp-router
+    network: attacker-zone
+    ip: 10.10.30.1

@@ -1,0 +1,9 @@
+set -g mouse {{ 'on' if instructor_console_tmux_settings.mouse_mode else 'off' }}
+set -g history-limit {{ instructor_console_tmux_settings.history_limit }}
+set -g status-bg {{ instructor_console_tmux_settings.status_bar_colour }}
+
+{% for window in instructor_console_tmux_settings.windows %}
+new-session -d -s {{ window.name }} "{{ window.command }}"
+{% endfor %}
+
+setw -g monitor-activity on

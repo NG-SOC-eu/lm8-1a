@@ -1,0 +1,13 @@
+service:
+  name: {{ trainee_workstation_collector.service_name }}
+  log_path: {{ trainee_workstation_collector.log_path }}
+  interval_minutes: {{ trainee_workstation_collector.ingestion_pipeline.interval_minutes }}
+transports:
+{% for transport in trainee_workstation_collector.ingestion_pipeline.transports %}
+  - type: {{ transport.type }}
+{% if transport.url is defined %}    url: {{ transport.url }}
+{% endif %}{% if transport.host is defined %}    host: {{ transport.host }}
+{% endif %}{% if transport.port is defined %}    port: {{ transport.port }}
+{% endif %}{% if transport.token is defined %}    token: {{ transport.token }}
+{% endif %}
+{% endfor %}

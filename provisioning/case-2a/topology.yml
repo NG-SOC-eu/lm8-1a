@@ -1,0 +1,112 @@
+name: lm8-subcase-2a-phishing-training
+hosts:
+  - name: instructor-console
+    base_box:
+      image: ubuntu-noble-x86_64
+      mgmt_user: ubuntu
+    flavor: standard.small
+  - name: rep-scheduler
+    base_box:
+      image: ubuntu-noble-x86_64
+      mgmt_user: ubuntu
+    flavor: standard.small
+  - name: rep-live-session
+    base_box:
+      image: ubuntu-noble-x86_64
+      mgmt_user: ubuntu
+    flavor: standard.small
+  - name: rep-quiz-engine
+    base_box:
+      image: ubuntu-noble-x86_64
+      mgmt_user: ubuntu
+    flavor: standard.small
+  - name: rep-practical-labs
+    base_box:
+      image: ubuntu-noble-x86_64
+      mgmt_user: ubuntu
+    flavor: standard.medium
+  - name: phishing-simulator
+    base_box:
+      image: ubuntu-noble-x86_64
+      mgmt_user: ubuntu
+    flavor: standard.small
+  - name: mail-relay
+    base_box:
+      image: ubuntu-noble-x86_64
+      mgmt_user: ubuntu
+    flavor: standard.small
+  - name: reporting-workspace
+    base_box:
+      image: ubuntu-noble-x86_64
+      mgmt_user: ubuntu
+    flavor: standard.medium
+  - name: trainee-workstation-01
+    base_box:
+      image: win10
+      mgmt_user: windows
+      mgmt_protocol: winrm
+    flavor: standard.medium
+  - name: trainee-workstation-02
+    base_box:
+      image: win10
+      mgmt_user: windows
+      mgmt_protocol: winrm
+    flavor: standard.medium
+routers:
+  - name: rep-gateway
+    base_box:
+      image: debian-12-x86_64
+      mgmt_user: debian
+    flavor: standard.small
+networks:
+  - name: rep-backend
+    cidr: 10.20.10.0/24
+    accessible_by_user: False
+  - name: rep-frontend
+    cidr: 10.20.20.0/24
+    accessible_by_user: True
+  - name: analytics-zone
+    cidr: 10.20.30.0/24
+    accessible_by_user: False
+net_mappings:
+  - host: rep-scheduler
+    network: rep-backend
+    ip: 10.20.10.10
+  - host: rep-live-session
+    network: rep-backend
+    ip: 10.20.10.20
+  - host: rep-quiz-engine
+    network: rep-backend
+    ip: 10.20.10.30
+  - host: rep-practical-labs
+    network: rep-backend
+    ip: 10.20.10.40
+  - host: phishing-simulator
+    network: rep-backend
+    ip: 10.20.10.50
+  - host: mail-relay
+    network: rep-backend
+    ip: 10.20.10.60
+  - host: instructor-console
+    network: rep-frontend
+    ip: 10.20.20.10
+  - host: trainee-workstation-01
+    network: rep-frontend
+    ip: 10.20.20.50
+  - host: trainee-workstation-02
+    network: rep-frontend
+    ip: 10.20.20.60
+  - host: reporting-workspace
+    network: analytics-zone
+    ip: 10.20.30.10
+router_mappings:
+  - router: rep-gateway
+    network: rep-backend
+    ip: 10.20.10.1
+  - router: rep-gateway
+    network: rep-frontend
+    ip: 10.20.20.1
+  - router: rep-gateway
+    network: analytics-zone
+    ip: 10.20.30.1
+groups: []

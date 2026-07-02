@@ -1,0 +1,33 @@
+name: cyberrangecz_core
+version: 1
+components:
+  instructor_console:
+    purpose: "Prepare and monitor the educational sessions for subcase 1a."
+    integrations:
+      - random_education_platform
+      - reporting_workspace
+  random_education_platform:
+    purpose: "Manage theoretical content, quizzes and hands-on labs for trainees."
+    modules:
+      - scheduler
+      - live_session
+      - quiz_engine
+      - practical_labs
+    integrations:
+      - instructor_console
+      - trainee_workstations
+      - reporting_workspace
+  trainee_workstations:
+    purpose: "Provide trainees with access to CyberRangeCZ content and labs."
+    integrations:
+      - random_education_platform
+      - cyberrange_simulators
+  reporting_workspace:
+    purpose: "Consolidate metrics and quiz/lab results for the instructor."
+    integrations:
+      - random_education_platform
+      - instructor_console
+  cyberrange_simulators:
+    purpose: "Practical scenarios used in the exercises for subcase 1a."
+    integrations:
+      - random_education_platform

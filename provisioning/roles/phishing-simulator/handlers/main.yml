@@ -1,0 +1,14 @@
+---
+- name: restart gophish
+  ansible.builtin.command:
+    cmd: docker compose restart gophish
+  args:
+    chdir: /opt/phishing-simulator
+  ignore_errors: true
+  failed_when: false
+  listen: restart gophish
+
+- name: restart docker daemon
+  ansible.builtin.service:
+    name: docker
+    state: restarted

@@ -1,0 +1,26 @@
+{
+  "_comment": "Example GoPhish campaign configuration for PUC2-Sub Case 2a. Import via GoPhish API or UI.",
+  "name": "PUC2-2a Phishing Awareness - Cohort A",
+  "template": {
+    "name": "IT Security Compliance Notice"
+  },
+  "landing_page": {
+    "name": "IT Compliance Portal"
+  },
+  "url": "http://phishing-simulator.internal",
+  "page": {
+    "name": "Credential Capture Page",
+    "html": "<html><body><h2>IT Compliance Verification</h2><p>Thank you for verifying your compliance status. This was a simulated phishing exercise.</p><p>Return to the <a href='http://lms.internal:8080/'>Learning Portal</a> to complete your detection report.</p></body></html>",
+    "capture_credentials": true,
+    "capture_passwords": false,
+    "redirect_url": "http://lms.internal:8080/#exercise"
+  },
+  "smtp": {
+    "name": "MailHog Lab Relay"
+  },
+  "launch_date": "2026-05-26T09:00:00+00:00",
+  "send_by_date": "2026-05-26T17:00:00+00:00",
+  "groups": [
+    { "name": "Trainee Cohort A" }
+  ]
+}

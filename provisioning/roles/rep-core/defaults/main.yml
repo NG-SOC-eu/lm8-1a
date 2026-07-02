@@ -1,0 +1,37 @@
+# TLS is disabled by default because the lab images do not ship with
+# certificates. Enabling TLS without providing certificate/key content
+# causes nginx to fail to reload, so the defaults favour a working HTTP
+# deployment. Operators can still enable TLS by overriding this variable
+# and supplying the required files or contents.
+rep_core_tls_enabled: false
+
+rep_core_virtual_host:
+  listen: "{{ 443 if rep_core_tls_enabled else 80 }}"
+  server_name: rep-core.internal
+  root: /srv/rep/current
+  access_log: /var/log/nginx/rep_core_access.log
+  error_log: /var/log/nginx/rep_core_error.log
+  upstreams:
+    - name: scheduler
+      server: 10.20.10.10:9001
+    - name: live_session
+      server: 10.20.10.20:9002
+    - name: quiz_engine
+      server: 10.20.10.30:9003
+  healthcheck_path: /healthz
+  proxy_headers:
+    X-Forwarded-Proto: "{{ 'https' if rep_core_tls_enabled else 'http' }}"
+    X-Request-ID: "$request_id"
+rep_core_tls:
+  certificate_path: /etc/nginx/tls/rep_core.crt
+  key_path: /etc/nginx/tls/rep_core.key
+  certificate_content: ""
+  key_content: ""
+rep_core_shared_secret_file: /etc/rep/credentials/api_shared_secret
+rep_core_shared_secret: ""
+rep_core_healthcheck:
+  url: "{{ (rep_core_tls_enabled | ternary('https', 'http')) }}://127.0.0.1/healthz"
+  status_code: 200
+  validate_certs: false
+rep_core_nginx_package: nginx
+rep_core_nginx_service: nginx

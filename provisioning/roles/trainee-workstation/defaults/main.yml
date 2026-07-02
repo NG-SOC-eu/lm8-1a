@@ -1,0 +1,49 @@
+---
+trainee_workstation_collector_ingestion_token: changeme
+
+trainee_workstation_collector_script_path: C:\ProgramData\REP\collector.ps1
+trainee_workstation_service_wrapper_extract_path: C:\ProgramData\REP
+trainee_workstation_service_wrapper_arch: ""
+trainee_workstation_service_wrapper_url: "{{ role_path }}/files/nssm-2.24.zip"
+trainee_workstation_service_wrapper_archive_path: C:\ProgramData\REP\nssm-2.24.zip
+trainee_workstation_service_wrapper_exe_path: C:\ProgramData\REP\nssm-2.24\win64\nssm.exe
+
+trainee_workstation_collector:
+  service_name: REPCollector
+  script_path: "{{ trainee_workstation_collector_script_path }}"
+  service_binary: C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe
+  service_args: -NoProfile -ExecutionPolicy Bypass -File "{{ trainee_workstation_collector_script_path }}"
+  service_wrapper:
+    url: "{{ trainee_workstation_service_wrapper_url }}"
+    archive_path: "{{ trainee_workstation_service_wrapper_archive_path }}"
+    extract_path: "{{ trainee_workstation_service_wrapper_extract_path }}"
+    exe_path: "{{ trainee_workstation_service_wrapper_exe_path }}"
+  config_path: C:\ProgramData\REP\collector.yaml
+  log_path: C:\ProgramData\REP\collector.log
+  stdout_log_path: C:\ProgramData\REP\collector-stdout.log
+  stderr_log_path: C:\ProgramData\REP\collector-stderr.log
+  directory: C:\ProgramData\REP
+  ingestion_pipeline:
+    interval_minutes: 1
+    transports:
+      - type: https
+        url: https://rep-core.internal/ingest
+        # Override this token in inventory/group_vars with a real value before deploying.
+        token: "{{ trainee_workstation_collector_ingestion_token }}"
+      - type: syslog
+        host: soc-gateway.internal
+        port: 514
+
+trainee_workstation_shortcuts:
+  - path: C:\Users\Public\Desktop\LiveSession.url
+    url: https://rep-core.internal/live
+    icon: C:\Program Files\Internet Explorer\iexplore.exe
+
+trainee_workstation_health_command: "Get-Service -Name {{ trainee_workstation_collector.service_name }} | Select-Object -ExpandProperty Status"
+
+trainee_workstation_welcome_note:
+  directory: C:\Labs
+  filename: WELCOME.txt
+  content: |
+    Welcome to the Random Education Platform lab environment.
+    Follow your instructor's guidance to complete the phishing awareness exercises.

@@ -1,0 +1,106 @@
+---
+- name: Ensure acl package is installed for Ansible become support
+  ansible.builtin.apt:
+    name: acl
+    state: present
+    update_cache: false
+
+- name: Install PostgreSQL and Python bindings
+  ansible.builtin.apt:
+    name:
+      - postgresql
+      - postgresql-contrib
+    state: present
+    update_cache: true
+
+- name: Ensure PostgreSQL service is started and enabled
+  ansible.builtin.service:
+    name: postgresql
+    state: started
+    enabled: true
+
+- name: Create REP reporting database
+  ansible.builtin.command:
+    cmd: >-
+      psql -c
+      "CREATE DATABASE {{ reporting_workspace_datasources[0].database }};"
+  become_user: postgres
+  register: pg_create_db
+  changed_when: "'CREATE DATABASE' in pg_create_db.stdout"
+  failed_when:
+    - pg_create_db.rc != 0
+    - "'already exists' not in pg_create_db.stderr"
+
+- name: Create REP reporting user
+  ansible.builtin.command:
+    cmd: >-
+      psql -c
+      "DO $$
+       BEGIN
+         IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = '{{ reporting_workspace_datasources[0].user }}') THEN
+           CREATE USER {{ reporting_workspace_datasources[0].user }}
+             WITH PASSWORD '{{ reporting_workspace_datasources[0].secureJsonData.password }}';
+         END IF;
+       END
+       $$;"
+  become_user: postgres
+  changed_when: false
+  no_log: true
+
+- name: Grant reporting user privileges on reporting database
+  ansible.builtin.command:
+    cmd: >-
+      psql -c
+      "GRANT ALL PRIVILEGES ON DATABASE {{ reporting_workspace_datasources[0].database }}
+       TO {{ reporting_workspace_datasources[0].user }};"
+  become_user: postgres
+  changed_when: false
+
+- name: Create trainee_scores table for scoring engine results
+  ansible.builtin.command:
+    cmd: >-
+      psql -d {{ reporting_workspace_datasources[0].database }} -c
+      "CREATE TABLE IF NOT EXISTS trainee_scores (
+         id                          SERIAL PRIMARY KEY,
+         campaign_id                 INTEGER NOT NULL,
+         campaign_name               TEXT,
+         email                       TEXT NOT NULL,
+         first_name                  TEXT,
+         last_name                   TEXT,
+         status                      TEXT,
+         reported                    BOOLEAN DEFAULT FALSE,
+         clicked                     BOOLEAN DEFAULT FALSE,
+         submitted_data              BOOLEAN DEFAULT FALSE,
+         send_date                   TIMESTAMPTZ,
+         reported_at                 TIMESTAMPTZ,
+         time_to_report_minutes      NUMERIC(8,2),
+         score_detection_accuracy    NUMERIC(5,2),
+         score_report_completeness   NUMERIC(5,2),
+         score_time_to_report        NUMERIC(5,2),
+         score_no_click_bonus        NUMERIC(5,2),
+         score_total                 NUMERIC(5,2),
+         traffic_light               TEXT,
+         scored_at                   TIMESTAMPTZ DEFAULT NOW(),
+         UNIQUE (campaign_id, email)
+       );"
+  become_user: postgres
+  register: pg_create_scores
+  changed_when: "'CREATE TABLE' in pg_create_scores.stdout"
+  failed_when:
+    - pg_create_scores.rc != 0
+    - "'already exists' not in pg_create_scores.stderr"
+
+- name: Grant reporting user access to all tables and sequences
+  ansible.builtin.command:
+    cmd: >-
+      psql -d {{ reporting_workspace_datasources[0].database }} -c
+      "GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public
+         TO {{ reporting_workspace_datasources[0].user }};
+       GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public
+         TO {{ reporting_workspace_datasources[0].user }};
+       ALTER DEFAULT PRIVILEGES IN SCHEMA public
+         GRANT ALL ON TABLES TO {{ reporting_workspace_datasources[0].user }};
+       ALTER DEFAULT PRIVILEGES IN SCHEMA public
+         GRANT ALL ON SEQUENCES TO {{ reporting_workspace_datasources[0].user }};"
+  become_user: postgres
+  changed_when: false

@@ -1,0 +1,301 @@
+---
+- name: Validate collector ingestion token override
+  ansible.builtin.assert:
+    that:
+      - (trainee_workstation_collector.ingestion_pipeline.transports
+          | selectattr('token', 'defined')
+          | map(attribute='token')
+          | select('equalto', 'changeme')
+          | list
+          | length) == 0
+    fail_msg: >-
+      The collector ingestion token is still set to the default placeholder value.
+      Set trainee_workstation_collector.ingestion_pipeline.transports[].token in inventory
+      or group_vars to a real token before running this role.
+
+- name: Ensure REP data directory exists
+  ansible.windows.win_file:
+    path: "{{ trainee_workstation_collector.directory }}"
+    state: directory
+
+- name: Ensure trainee labs directory exists
+  ansible.windows.win_file:
+    path: "{{ trainee_workstation_welcome_note.directory }}"
+    state: directory
+
+- name: Ensure collector script directory exists
+  ansible.windows.win_file:
+    path: "{{ trainee_workstation_collector_script_path | regex_replace('\\\\[^\\\\]+$', '') }}"
+    state: directory
+
+- name: Deploy trainee welcome note
+  ansible.windows.win_powershell:
+    script: |
+      $path = "{{ trainee_workstation_welcome_note.path | default(trainee_workstation_welcome_note.directory ~ '\\' ~ trainee_workstation_welcome_note.filename) }}"
+      $content = @'
+      {{ trainee_workstation_welcome_note.content | default('') | indent(6, true) }}
+      '@
+      Set-Content -Path $path -Value $content -Encoding UTF8
+
+- name: Deploy collector configuration
+  ansible.windows.win_template:
+    src: collector.yaml.j2
+    dest: "{{ trainee_workstation_collector.config_path }}"
+  notify: restart rep collector
+  no_log: true
+
+- name: Deploy collector PowerShell script
+  ansible.windows.win_template:
+    src: collector.ps1.j2
+    dest: "{{ trainee_workstation_collector_script_path }}"
+  notify: restart rep collector
+
+- name: Determine collector service wrapper architecture
+  ansible.builtin.set_fact:
+    trainee_workstation_nssm_arch: >-
+      {{
+        (trainee_workstation_service_wrapper_arch | default('') | lower)
+        if (trainee_workstation_service_wrapper_arch | default('') | lower) in ['win32', 'win64']
+        else ('win64' if (ansible_processor_architecture | default(ansible_architecture | default('')) | lower | regex_search('amd64|x86_64|64')) else 'win32')
+      }}
+
+- name: Set collector service wrapper executable path
+  ansible.builtin.set_fact:
+    trainee_workstation_nssm_path: '{{ [trainee_workstation_collector.service_wrapper.extract_path, "nssm-2.24", trainee_workstation_nssm_arch, "nssm.exe"] | join("\\") }}'
+
+- name: Configure collector service wrapper executable path
+  ansible.builtin.set_fact:
+    trainee_workstation_collector: "{{ trainee_workstation_collector | combine({'service_wrapper': trainee_workstation_collector.service_wrapper | combine({'exe_path': trainee_workstation_nssm_path})}) }}"
+
+- name: Determine collector service wrapper source type
+  ansible.builtin.set_fact:
+    trainee_workstation_service_wrapper_remote: "{{ trainee_workstation_collector.service_wrapper.url is match('^https?://') }}"
+
+- name: Check for existing collector service wrapper archive
+  ansible.windows.win_stat:
+    path: "{{ trainee_workstation_collector.service_wrapper.archive_path }}"
+  register: trainee_workstation_service_wrapper_archive
+
+- name: Copy bundled collector service wrapper
+  ansible.windows.win_copy:
+    src: "{{ trainee_workstation_collector.service_wrapper.url }}"
+    dest: "{{ trainee_workstation_collector.service_wrapper.archive_path }}"
+    force: false
+  when:
+    - not trainee_workstation_service_wrapper_remote
+    - not trainee_workstation_service_wrapper_archive.stat.exists
+
+- name: Download collector service wrapper
+  ansible.windows.win_get_url:
+    url: "{{ trainee_workstation_collector.service_wrapper.url }}"
+    dest: "{{ trainee_workstation_collector.service_wrapper.archive_path }}"
+    force: false
+  when:
+    - trainee_workstation_service_wrapper_remote
+    - not trainee_workstation_service_wrapper_archive.stat.exists
+
+- name: Extract collector service wrapper
+  community.windows.win_unzip:
+    src: "{{ trainee_workstation_collector.service_wrapper.archive_path }}"
+    dest: "{{ trainee_workstation_collector.service_wrapper.extract_path }}"
+    creates: "{{ trainee_workstation_nssm_path }}"
+
+- name: Validate collector service wrapper extraction
+  ansible.windows.win_stat:
+    path: "{{ trainee_workstation_nssm_path }}"
+  register: trainee_workstation_nssm_stat
+
+- name: Fail when collector service wrapper is missing
+  ansible.builtin.fail:
+    msg: >-
+      Collector service wrapper binary not found at {{ trainee_workstation_nssm_path }}.
+      Verify extraction of {{ trainee_workstation_collector.service_wrapper.archive_path }} from {{ trainee_workstation_collector.service_wrapper.url }}
+      and adjust trainee_workstation_service_wrapper_arch if the host is 32-bit.
+  when:
+    - not trainee_workstation_nssm_stat.stat.exists
+
+- name: Publish trainee shortcuts
+  ansible.windows.win_template:
+    src: shortcut.url.j2
+    dest: "{{ shortcut.path }}"
+  loop: "{{ trainee_workstation_shortcuts | list }}"
+  loop_control:
+    loop_var: shortcut
+
+- name: Ensure collector log directories exist
+  ansible.windows.win_file:
+    path: "{{ log_dir }}"
+    state: directory
+  loop: "{{ [
+      trainee_workstation_collector.log_path | regex_replace('\\\\[^\\\\]+$', ''),
+      trainee_workstation_collector.stdout_log_path | regex_replace('\\\\[^\\\\]+$', ''),
+      trainee_workstation_collector.stderr_log_path | regex_replace('\\\\[^\\\\]+$', '')
+    ] | unique }}"
+  loop_control:
+    loop_var: log_dir
+
+- name: Ensure collector service is running
+  community.windows.win_nssm:
+    name: "{{ trainee_workstation_collector.service_name }}"
+    application: "{{ trainee_workstation_collector.service_binary }}"
+    arguments: "{{ trainee_workstation_collector.service_args }}"
+    executable: "{{ trainee_workstation_nssm_path }}"
+    app_stdout: "{{ trainee_workstation_collector.stdout_log_path }}"
+    app_stderr: "{{ trainee_workstation_collector.stderr_log_path }}"
+    app_exit: "Default Restart"
+    app_restart_delay: 10000
+    start_mode: auto
+    state: started
+
+- name: Validate collector service status
+  block:
+    - block:
+        - name: Ensure collector service is started
+          ansible.windows.win_service:
+            name: "{{ trainee_workstation_collector.service_name }}"
+            state: started
+          register: trainee_collector_service_start
+
+      rescue: &trainee_collector_diagnostics
+        - name: Read collector logs on failure
+          ansible.windows.win_shell: |
+            $paths = @(
+              "{{ trainee_workstation_collector.log_path }}",
+              "{{ trainee_workstation_collector.stdout_log_path }}",
+              "{{ trainee_workstation_collector.stderr_log_path }}"
+            )
+            foreach ($p in $paths) {
+              if (Test-Path $p) {
+                Write-Output "===== $p ====="
+                Get-Content -Path $p -Tail 50
+              } else {
+                Write-Output "===== $p (missing) ====="
+              }
+            }
+          register: trainee_collector_logs
+          changed_when: false
+
+        - name: Collect recent REPCollector event logs
+          ansible.windows.win_shell: |
+            $logs = @('System', 'Application')
+            foreach ($log in $logs) {
+              Write-Output "===== $log events (last 15 minutes) ====="
+              Get-WinEvent -FilterHashtable @{LogName=$log; StartTime=(Get-Date).AddMinutes(-15)} |
+                Where-Object Message -match 'REPCollector' |
+                Select-Object -First 50 |
+                Format-List TimeCreated, Id, LevelDisplayName, ProviderName, Message
+            }
+          register: trainee_collector_events
+          changed_when: false
+
+        - name: Collect REPCollector service status
+          ansible.windows.win_shell: |
+            Get-WmiObject Win32_Service -Filter "Name='REPCollector'" |
+              Select-Object Name, State, Status, StartMode, ExitCode, ServiceSpecificExitCode, ProcessId |
+              Format-List
+          register: trainee_collector_service_info
+          changed_when: false
+
+        - name: Fail with collector service diagnostics
+          ansible.builtin.fail:
+            msg: |
+              Collector service failed to start or reach a running state.
+              Service start result: {{ trainee_collector_service_start | default({}) }}
+              Health check output: {{ trainee_collector_health.stdout | default('') }}
+              Service info:
+              {{ trainee_collector_service_info.stdout | default('') }}
+              Recent event logs:
+              {{ trainee_collector_events.stdout | default('') }}
+              Logs:
+              {{ trainee_collector_logs.stdout | default('') }}
+
+    - name: Verify collector service is running
+      ansible.windows.win_shell: "{{ trainee_workstation_health_command }}"
+      register: trainee_collector_health
+      changed_when: false
+      until: trainee_collector_health.rc == 0 and 'Running' in trainee_collector_health.stdout
+      retries: 12
+      delay: 5
+      failed_when: trainee_collector_health.rc != 0 or 'Running' not in trainee_collector_health.stdout
+
+  rescue: *trainee_collector_diagnostics
+
+- name: Validate collector heartbeat
+  block:
+    - name: Check for collector log file
+      ansible.windows.win_stat:
+        path: "{{ trainee_workstation_collector.log_path }}"
+      register: trainee_collector_log_stat
+      changed_when: false
+      failed_when: not trainee_collector_log_stat.stat.exists
+
+    - name: Verify collector heartbeat entries
+      ansible.windows.win_shell: |-
+        $logPath = "{{ trainee_workstation_collector.log_path }}"
+        $entry = Select-String -Path $logPath -Pattern 'Collector heartbeat' | Select-Object -Last 1
+
+        if ($null -eq $entry) {
+          Write-Output "No Collector heartbeat entries found in $logPath"
+          exit 1
+        }
+
+        Write-Output $entry.Line
+      register: trainee_collector_heartbeat
+      changed_when: false
+      until: trainee_collector_heartbeat.rc == 0 and 'Collector heartbeat' in trainee_collector_heartbeat.stdout
+      retries: 12
+      delay: 5
+      failed_when: trainee_collector_heartbeat.rc != 0 or 'Collector heartbeat' not in trainee_collector_heartbeat.stdout
+
+  rescue:
+    - name: Read collector logs on failure
+      ansible.windows.win_shell: |
+        $paths = @(
+          "{{ trainee_workstation_collector.log_path }}",
+          "{{ trainee_workstation_collector.stdout_log_path }}",
+          "{{ trainee_workstation_collector.stderr_log_path }}"
+        )
+        foreach ($p in $paths) {
+          if (Test-Path $p) {
+            Write-Output "===== $p ====="
+            Get-Content -Path $p -Tail 50
+          } else {
+            Write-Output "===== $p (missing) ====="
+          }
+        }
+      register: trainee_collector_logs
+      changed_when: false
+
+    - name: Collect recent REPCollector event logs
+      ansible.windows.win_shell: |
+        $logs = @('System', 'Application')
+        foreach ($log in $logs) {
+          Write-Output "===== $log events (last 15 minutes) ====="
+          Get-WinEvent -FilterHashtable @{LogName=$log; StartTime=(Get-Date).AddMinutes(-15)} |
+            Where-Object Message -match 'REPCollector' |
+            Select-Object -First 50 |
+            Format-List TimeCreated, Id, LevelDisplayName, ProviderName, Message
+        }
+      register: trainee_collector_events
+      changed_when: false
+
+    - name: Collect REPCollector service status
+      ansible.windows.win_shell: |
+        Get-WmiObject Win32_Service -Filter "Name='REPCollector'" |
+          Select-Object Name, State, Status, StartMode, ExitCode, ServiceSpecificExitCode, ProcessId |
+          Format-List
+      register: trainee_collector_service_info
+      changed_when: false
+
+    - name: Fail with collector heartbeat diagnostics
+      ansible.builtin.fail:
+        msg: |-
+          Collector heartbeat entry not found in {{ trainee_workstation_collector.log_path }}.
+          Service start result: {{ trainee_collector_service_start | default({}) }}
+          Health check output: {{ trainee_collector_health.stdout | default('') }}
+          Service info:
+          {{ trainee_collector_service_info.stdout | default('') }}
+          Recent event logs:
+          {{ trainee_collector_events.stdout | default('') }}
+          Logs:
+          {{ trainee_collector_logs.stdout | default('') }}

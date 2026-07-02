@@ -1,0 +1,127 @@
+{
+  "name": "CyberRangeCZ Practical Modules",
+  "description": "Learning sequence for PUC2-Sub Case 2a: Phishing Attack Training Scenario. Self-paced training for staff on identifying phishing campaigns through the Hands-on Educational Platform.",
+  "modules": [
+    {
+      "id": "subcase-2a",
+      "title": "PUC2-Sub Case 2a - Phishing Attack Training Scenario",
+      "phases": [
+        {
+          "name": "Training setup",
+          "description": "The Training Instructor configures and publishes self-paced phishing awareness courses on the Hands-on Educational Platform.",
+          "activities": [
+            {
+              "step": 1,
+              "actor": "Training Instructor",
+              "target": "Hands-on Educational Platform",
+              "description": "The Training Instructor accesses the GoPhish admin panel and the LMS course portal to create self-paced phishing awareness courses. This includes defining phishing email templates, configuring simulated landing pages, setting campaign parameters (targets, duration, objectives), and uploading course theory modules to the LMS.",
+              "tools": [
+                "GoPhish Admin Panel (http://phishing-simulator.internal:3333/)",
+                "LMS Course Portal (http://lms.internal:8080/)",
+                "Instructor console"
+              ],
+              "success_criteria": "At least one GoPhish campaign is created with a valid phishing email template, a landing page, and a sending profile pointing to the MailHog relay. LMS course modules are published and accessible."
+            },
+            {
+              "step": 2,
+              "actor": "Hands-on Educational Platform",
+              "target": "Training Instructor",
+              "description": "The platform confirms content publication: the GoPhish campaign moves to a launchable state, and the LMS course portal becomes accessible to trainees. The instructor verifies that simulated phishing emails can be dispatched via the MailHog relay and that trainee-facing URLs resolve correctly.",
+              "tools": [
+                "GoPhish campaign status dashboard",
+                "MailHog WebUI (http://mail-relay.internal:8025/)",
+                "Instructor console"
+              ],
+              "success_criteria": "GoPhish campaign status shows 'Ready'. Test phishing email is delivered and visible in MailHog WebUI. LMS course URL is reachable from trainee workstations."
+            }
+          ]
+        },
+        {
+          "name": "Trainee executes scenario",
+          "description": "Trainees access the educational platform and engage with the phishing simulation, practising detection skills across emails, links, and attachments.",
+          "activities": [
+            {
+              "step": 3,
+              "actor": "Trainee",
+              "target": "Hands-on Educational Platform",
+              "description": "The trainee accesses the LMS course portal from their workstation, reviews the phishing awareness modules (sender identification, content red flags, attachment inspection, reporting protocols) and launches the phishing learning module to begin the practical exercise.",
+              "tools": [
+                "LMS Course Portal (http://lms.internal:8080/)",
+                "Trainee workstation browser",
+                "REP Quiz Engine"
+              ],
+              "success_criteria": "Trainee has completed all three theory modules and clicked 'Start Exercise' to trigger the phishing simulation."
+            },
+            {
+              "step": 4,
+              "actor": "Hands-on Educational Platform",
+              "target": "Trainee",
+              "description": "The GoPhish platform dispatches the simulated phishing email to the trainee's MailHog inbox. The email mimics a realistic IT security notification with urgency cues, a spoofed sender, and a link to a simulated credential-harvesting landing page. The trainee sees the email in their MailHog WebUI.",
+              "tools": [
+                "GoPhish (phishing email delivery)",
+                "MailHog WebUI (http://mail-relay.internal:8025/)",
+                "GoPhish landing page (http://phishing-simulator.internal/)"
+              ],
+              "success_criteria": "Simulated phishing email is visible in trainee's MailHog inbox. The embedded phishing link resolves to a GoPhish landing page. Email open and click events are tracked in GoPhish."
+            }
+          ]
+        },
+        {
+          "name": "Assessment and feedback",
+          "description": "The platform scores trainee actions against learning objectives, delivers personalised feedback, and provides cohort-level performance metrics to the instructor.",
+          "activities": [
+            {
+              "step": 5,
+              "actor": "Trainee",
+              "target": "Hands-on Educational Platform",
+              "description": "The trainee inspects the simulated phishing email to identify red flags: scrutinises sender information for inconsistencies, analyses email content for grammatical errors and urgent requests, verifies any attachments for legitimacy, and reports the suspicious email using the organisational protocol (REP incident form or the GoPhish 'Report Phishing' button).",
+              "tools": [
+                "MailHog WebUI",
+                "GoPhish landing page (detection challenge)",
+                "REP Practical Labs - Incident Form",
+                "LMS detection checklist"
+              ],
+              "success_criteria": "Trainee has submitted a detection report via REP Practical Labs documenting at least three identified red flags. If the trainee clicked the phishing link, the GoPhish event is recorded as a training data point."
+            },
+            {
+              "step": 6,
+              "actor": "Hands-on Educational Platform",
+              "target": "Hands-on Educational Platform",
+              "description": "The platform automatically scores trainee actions against the defined learning objectives: (a) time-to-detection, (b) accuracy of identified red flags vs expected indicators, (c) correct/incorrect link clicks on the phishing URL, (d) completeness of the incident report. GoPhish records click/open/submission events; REP Quiz Engine aggregates the detection checklist score.",
+              "tools": [
+                "GoPhish campaign results API",
+                "REP Quiz Engine scoring engine",
+                "Reporting Workspace (PostgreSQL ingestion)"
+              ],
+              "success_criteria": "A composite score per trainee is computed and stored in the REP reporting database. Score components: detection accuracy (40%), report completeness (30%), time-to-report (20%), no phishing link click (10% bonus)."
+            },
+            {
+              "step": 7,
+              "actor": "Hands-on Educational Platform",
+              "target": "Trainee",
+              "description": "The platform delivers personalised feedback to each trainee: overall score, breakdown per objective, list of missed red flags with explanations, and targeted learning recommendations (e.g., 'Review Module 2 - Content Red Flags'). Feedback is accessible from the LMS portal and via a summary email sent through MailHog.",
+              "tools": [
+                "LMS Course Portal - Feedback section",
+                "REP Practical Labs - Result view",
+                "MailHog (feedback delivery)"
+              ],
+              "success_criteria": "Each trainee can view their personalised feedback report on the LMS portal within 5 minutes of submitting their detection report. The feedback includes score, missed indicators, and module recommendations."
+            },
+            {
+              "step": 8,
+              "actor": "Hands-on Educational Platform",
+              "target": "Training Instructor",
+              "description": "The Reporting Workspace (Grafana) presents cohort-level performance metrics to the instructor: aggregate detection rate, click-through rate on phishing links, average time-to-report, score distribution across trainees, and compliance status per trainee. The instructor can export the campaign results using the GoPhish results export script.",
+              "tools": [
+                "Reporting Workspace - Grafana Dashboard (http://reporting.internal:3000/)",
+                "GoPhish campaign results export (scripts/export_gophish_results.sh)",
+                "Instructor console"
+              ],
+              "success_criteria": "Grafana REP Overview dashboard shows per-trainee and cohort metrics. Instructor can export a CSV/JSON report of campaign results. Traffic-light status per trainee is visible (green: detected, amber: reported late, red: clicked link)."
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

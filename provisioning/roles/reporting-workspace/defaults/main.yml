@@ -1,0 +1,40 @@
+---
+reporting_workspace_grafana_package: grafana
+reporting_workspace_grafana_ini: /etc/grafana/grafana.ini
+reporting_workspace_grafana_admin_user: admin
+# Lab-only hardcoded value. Disposable CyberRangeCZ sandbox only — do NOT reuse in real environments.
+reporting_workspace_grafana_admin_password: "admin"
+reporting_workspace_datasource_template: /etc/grafana/provisioning/datasources/rep.yaml
+reporting_workspace_dashboards_dir: /etc/grafana/provisioning/dashboards
+reporting_workspace_datasources:
+  - name: rep_postgresql
+    type: postgres
+    url: localhost:5432
+    database: rep_reporting
+    user: rep_reporting
+    secureJsonData:
+      password: changeme
+reporting_workspace_dashboards:
+  - uid: rep-overview
+    title: REP Overview
+    folder: REP
+    file: rep-overview.json
+reporting_workspace_healthcheck:
+  url: http://127.0.0.1:3000/api/health
+  status_code: 200
+  status_code_alternatives: []
+  failed_when_non_json: Grafana health endpoint did not return JSON. Check Grafana service status.
+reporting_workspace_grafana_service: grafana-server
+reporting_workspace_scoring_dir: /opt/rep-scoring
+reporting_workspace_grafana_repositories:
+  - name: grafana_oss
+    apt_key:
+      url: https://apt.grafana.com/gpg.key
+      keyring: /usr/share/keyrings/grafana.gpg
+      state: present
+    apt_repository:
+      repo: >-
+        deb [signed-by=/usr/share/keyrings/grafana.gpg] https://apt.grafana.com stable main
+      filename: grafana
+      state: present
+      update_cache: true

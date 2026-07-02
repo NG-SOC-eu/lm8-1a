@@ -1,0 +1,4 @@
+---
+- name: reload profile for instructor console
+  ansible.builtin.command: /bin/true
+  changed_when: false

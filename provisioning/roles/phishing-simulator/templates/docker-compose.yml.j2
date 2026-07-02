@@ -1,0 +1,14 @@
+services:
+  gophish:
+    image: {{ phishing_simulator_docker_image }}
+    container_name: gophish
+    restart: unless-stopped
+    ports:
+      - "{{ phishing_simulator_admin_port }}:{{ phishing_simulator_admin_port }}"
+      - "{{ phishing_simulator_phishing_port }}:{{ phishing_simulator_phishing_port }}"
+    volumes:
+      - gophish-data:/opt/gophish
+      - ./config.json:/opt/gophish/config.json:ro
+
+volumes:
+  gophish-data:

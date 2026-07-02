@@ -1,0 +1,102 @@
+$ErrorActionPreference = 'Stop'
+
+$configPath = "{{ trainee_workstation_collector.config_path }}"
+$logPath = "{{ trainee_workstation_collector.log_path }}"
+$logDirectory = Split-Path -Path $logPath -Parent
+# Service wrapper stdout/stderr logs are stored at
+# {{ trainee_workstation_collector.stdout_log_path }} and {{ trainee_workstation_collector.stderr_log_path }}
+# for troubleshooting when the service fails to start.
+$eventSource = 'TraineeCollectorScript'
+$eventLogName = 'Application'
+$eventLogAvailable = $true
+
+function Write-CollectorLog {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Message,
+        [int]$MaxAttempts = 5
+    )
+
+    $writeSuccessful = $false
+    $attempt = 0
+
+    while (-not $writeSuccessful -and $attempt -lt $MaxAttempts) {
+        try {
+            Add-Content -Path $logPath -Value $Message -ErrorAction Stop
+            $writeSuccessful = $true
+        } catch {
+            $attempt++
+            if ($attempt -ge $MaxAttempts) {
+                $timestamp = Get-Date -Format o
+                $warningMessage = "[$timestamp] WARNING: Failed to write log entry to $logPath after $attempt attempts: $($_.Exception.Message)"
+                Write-Warning $warningMessage
+                if ($eventLogAvailable) {
+                    try {
+                        Write-EventLog -LogName $eventLogName -Source $eventSource -EntryType Warning -EventId 1001 -Message $warningMessage -ErrorAction Stop
+                    } catch {
+                        $eventLogAvailable = $false
+                        $eventLogWarning = "[$timestamp] WARNING: Unable to emit event log entry: $($_.Exception.Message)"
+                        Write-Warning $eventLogWarning
+                    }
+                }
+            } else {
+                $backoffSeconds = [math]::Pow(2, $attempt)
+                Start-Sleep -Seconds $backoffSeconds
+            }
+        }
+    }
+
+    return $writeSuccessful
+}
+
+if (-not (Test-Path -Path $logDirectory)) {
+    New-Item -Path $logDirectory -ItemType Directory -Force | Out-Null
+}
+
+$configContent = $null
+if (Test-Path -Path $configPath) {
+    try {
+        $configContent = Get-Content -Path $configPath -Raw
+    } catch {
+        Write-Warning "Failed to read configuration file at ${configPath}: $($_.Exception.Message)"
+    }
+}
+
+if (-not (Test-Path -Path $logPath)) {
+    New-Item -Path $logPath -ItemType File -Force | Out-Null
+}
+
+try {
+    if (-not [System.Diagnostics.EventLog]::SourceExists($eventSource)) {
+        New-EventLog -LogName $eventLogName -Source $eventSource -ErrorAction Stop
+    }
+} catch {
+    $eventLogAvailable = $false
+    $eventLogWarning = "[$(Get-Date -Format o)] WARNING: Event log unavailable for source '${eventSource}': $($_.Exception.Message)"
+    Write-CollectorLog -Message $eventLogWarning | Out-Null
+    Write-Warning $eventLogWarning
+}
+
+if ($configContent) {
+    $startupMessage = "[$(Get-Date -Format o)] Loaded collector configuration ($($configContent.Length) characters)."
+} else {
+    $startupMessage = "[$(Get-Date -Format o)] Collector configuration not found or empty."
+}
+Write-CollectorLog -Message $startupMessage | Out-Null
+
+while ($true) {
+    try {
+        $timestamp = Get-Date -Format o
+        $heartbeat = "[$timestamp] Collector heartbeat"
+        Write-CollectorLog -Message $heartbeat | Out-Null
+
+        Start-Sleep -Seconds 60
+    } catch {
+        $errorTimestamp = Get-Date -Format o
+        $errorMessage = "[$errorTimestamp] ERROR: Collector loop encountered an exception: $($_.Exception.Message)"
+        Write-CollectorLog -Message $errorMessage | Out-Null
+        Write-Warning $errorMessage
+
+        Start-Sleep -Seconds 10
+    }
+}

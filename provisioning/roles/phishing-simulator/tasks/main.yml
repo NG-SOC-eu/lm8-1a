@@ -1,0 +1,350 @@
+---
+- name: Install Docker prerequisites
+  ansible.builtin.apt:
+    name:
+      - ca-certificates
+      - curl
+      - sqlite3
+    state: present
+    update_cache: true
+
+- name: Ensure /etc/apt/keyrings directory exists
+  ansible.builtin.file:
+    path: /etc/apt/keyrings
+    state: directory
+    mode: "0755"
+
+- name: Add Docker official GPG key
+  ansible.builtin.get_url:
+    url: https://download.docker.com/linux/ubuntu/gpg
+    dest: /etc/apt/keyrings/docker.asc
+    mode: "0644"
+
+- name: Add Docker apt repository
+  ansible.builtin.apt_repository:
+    repo: >-
+      deb [arch=amd64 signed-by=/etc/apt/keyrings/docker.asc]
+      https://download.docker.com/linux/ubuntu
+      {{ ansible_distribution_release }} stable
+    filename: docker
+    state: present
+    update_cache: true
+
+- name: Install Docker engine and Compose plugin
+  ansible.builtin.apt:
+    name:
+      - docker-ce
+      - docker-ce-cli
+      - containerd.io
+      - docker-buildx-plugin
+      - docker-compose-plugin
+    state: present
+
+- name: Ensure Docker service is running and enabled
+  ansible.builtin.service:
+    name: docker
+    state: started
+    enabled: true
+
+- name: Create GoPhish compose directory
+  ansible.builtin.file:
+    path: "{{ phishing_simulator_compose_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0750"
+
+- name: Deploy GoPhish configuration (TLS disabled for lab)
+  ansible.builtin.template:
+    src: config.json.j2
+    dest: "{{ phishing_simulator_compose_dir }}/config.json"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: restart gophish
+
+- name: Log in to Docker Hub to avoid pull rate limits
+  ansible.builtin.command:
+    cmd: docker login --username "{{ dockerhub_username }}" --password-stdin
+    stdin: "{{ dockerhub_password }}"
+  no_log: true
+  when:
+    - dockerhub_username | default('') | length > 0
+    - dockerhub_password | default('') | length > 0
+
+- name: Configure Docker daemon registry mirror
+  ansible.builtin.copy:
+    dest: /etc/docker/daemon.json
+    content: '{"registry-mirrors": ["https://mirror.gcr.io"]}'
+    mode: '0644'
+  notify: restart docker daemon
+
+- name: Flush handlers to apply mirror before pull
+  ansible.builtin.meta: flush_handlers
+
+- name: Deploy GoPhish Docker Compose definition
+  ansible.builtin.template:
+    src: docker-compose.yml.j2
+    dest: "{{ phishing_simulator_compose_dir }}/docker-compose.yml"
+    owner: root
+    group: root
+    mode: "0640"
+  notify: restart gophish
+
+- name: Apply pending GoPhish configuration restarts
+  ansible.builtin.meta: flush_handlers
+
+- name: Pull GoPhish image via registry mirror
+  ansible.builtin.command:
+    cmd: docker pull mirror.gcr.io/gophish/gophish:latest
+  args:
+    chdir: /opt/phishing-simulator
+
+- name: Tag GoPhish mirror image as canonical name
+  ansible.builtin.command:
+    cmd: docker tag mirror.gcr.io/gophish/gophish:latest gophish/gophish:latest
+
+- name: Start GoPhish service
+  ansible.builtin.command:
+    cmd: docker compose up -d --pull never
+  args:
+    chdir: /opt/phishing-simulator
+  register: gophish_start
+  changed_when: "'Started' in gophish_start.stdout or 'Created' in gophish_start.stdout"
+
+- name: Wait for GoPhish admin port to become available
+  ansible.builtin.wait_for:
+    host: 127.0.0.1
+    port: "{{ phishing_simulator_healthcheck.port }}"
+    timeout: "{{ phishing_simulator_healthcheck.timeout }}"
+    delay: "{{ phishing_simulator_healthcheck.delay }}"
+    sleep: 2
+
+# Bootstrap is idempotent and detects real platform state on EVERY run.
+# The GoPhish database lives in the `gophish-data` Docker volume (see
+# docker-compose.yml.j2), NOT in the host admin_credentials.txt file, so the
+# state of the platform is derived from the volume/API directly rather than
+# from the presence of a sentinel file on the host. This guarantees the SMTP
+# sending profile is reconciled even when the volume is recreated.
+
+# Best-effort recovery of the initial admin password. It is only present in the
+# container logs on a fresh boot; on later runs the line may be gone, which is
+# expected and must not be treated as an error.
+- name: Retrieve GoPhish initial admin password from container logs
+  ansible.builtin.shell:
+    cmd: >-
+      set -o pipefail;
+      docker logs gophish 2>&1
+      | grep -i 'Please login'
+      | sed 's/.*password //'
+      | tr -d '"' | tr -d "'" | tr -d ' '
+      | tail -1
+  args:
+    executable: /bin/bash
+  register: gophish_init_pass
+  changed_when: false
+  failed_when: false
+  no_log: true
+
+- name: Save GoPhish admin credentials when the initial password is recoverable
+  ansible.builtin.copy:
+    content: |
+      GoPhish Admin Panel
+      ===================
+      URL:      http://{{ ansible_host }}:{{ phishing_simulator_admin_port }}/
+      Username: admin
+      Password: {{ gophish_init_pass.stdout | trim }}
+
+      IMPORTANT: Change this password after first login.
+      The password above is valid only until the instructor changes it via the UI.
+    dest: "{{ phishing_simulator_compose_dir }}/admin_credentials.txt"
+    owner: root
+    group: root
+    mode: "0600"
+  no_log: true
+  when: gophish_init_pass.stdout | default('') | trim | length > 0
+
+- name: Warn when the initial admin password is no longer in the logs
+  ansible.builtin.debug:
+    msg: >-
+      GoPhish initial admin password was not found in the container logs.
+      Any existing admin_credentials.txt has been left untouched (it may have
+      already been changed via the UI). This is not a failure.
+  when: gophish_init_pass.stdout | default('') | trim | length == 0
+
+# Always read the live API key straight from the GoPhish database. This works
+# regardless of whether the host credentials file exists, so SMTP reconciliation
+# below cannot be skipped by a stale sentinel file.
+#
+# Robustness: on a freshly created `gophish-data` volume the DB is in WAL mode,
+# so the admin row (and its api_key) may still live in the -wal sidecar and not
+# yet be in the main .db file. Copy the .db plus its -wal/-shm sidecars together
+# so sqlite3 reads a consistent state, and retry until a non-empty key appears
+# (the API may not have finished initialising when the admin port first opens).
+- name: Get GoPhish API key from database
+  ansible.builtin.shell:
+    cmd: >-
+      set -o pipefail;
+      db=/tmp/gophish_apikey.db;
+      rm -f "$db" "$db-wal" "$db-shm";
+      docker cp gophish:/opt/gophish/gophish.db "$db";
+      docker cp gophish:/opt/gophish/gophish.db-wal "$db-wal"
+      2>/dev/null || true;
+      docker cp gophish:/opt/gophish/gophish.db-shm "$db-shm"
+      2>/dev/null || true;
+      api_key="$(sqlite3 "$db"
+      "SELECT api_key FROM users WHERE username='admin';")";
+      rm -f "$db" "$db-wal" "$db-shm";
+      printf '%s' "$api_key"
+  args:
+    executable: /bin/bash
+  register: gophish_api_key
+  retries: 12
+  delay: 5
+  until: gophish_api_key.stdout | default('') | trim | length > 0
+  changed_when: false
+  failed_when: false
+  no_log: true
+
+# Fail fast with a LEGIBLE message (no no_log) before touching the API, so an
+# empty key surfaces here rather than as a censored 401 in the GET below.
+- name: Assert the GoPhish API key was obtained before configuring SMTP
+  ansible.builtin.assert:
+    that:
+      - gophish_api_key.stdout | default('') | trim | length > 0
+    fail_msg: >-
+      No se pudo obtener la API key de GoPhish; la plataforma no quedó
+      lista para configurar el perfil SMTP. Revisa el contenedor gophish
+      (docker logs gophish) y que /opt/gophish/gophish.db contenga el admin.
+    success_msg: "GoPhish API key obtained; proceeding to SMTP profile setup."
+
+# Pre-configure the MailHog SMTP sending profile so campaigns can be launched
+# immediately after the instructor logs in. Idempotent: query first, create only
+# when missing. status_code [201, 409] tolerates a concurrent create race.
+#
+# No no_log here: a real failure (e.g. a transient 401 right after boot) must be
+# readable. Retry until the API authenticates (200); once retries are exhausted
+# status_code [200] makes the task fail with the status and body VISIBLE.
+- name: Fetch existing GoPhish SMTP sending profiles
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:{{ phishing_simulator_admin_port }}/api/smtp/"
+    method: GET
+    headers:
+      Authorization: "{{ gophish_api_key.stdout | trim }}"
+    status_code: [200]
+  register: gophish_smtp_profiles
+  retries: 12
+  delay: 5
+  until: gophish_smtp_profiles.status | default(0) == 200
+
+- name: Pre-configure MailHog SMTP sending profile in GoPhish
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:{{ phishing_simulator_admin_port }}/api/smtp/"
+    method: POST
+    headers:
+      Authorization: "{{ gophish_api_key.stdout | trim }}"
+    body_format: json
+    body:
+      name: "MailHog Lab Relay"
+      host: "{{ phishing_simulator_smtp_host }}:{{ phishing_simulator_smtp_port }}"
+      from_address: "{{ phishing_simulator_from_address }}"
+      ignore_cert_errors: true
+      headers: []
+    status_code: [201, 409]
+  register: gophish_smtp_create
+  when: >-
+    gophish_smtp_profiles.json | default([])
+    | selectattr('name', 'equalto', 'MailHog Lab Relay')
+    | list | length == 0
+
+# Deploy phishing email HTML template file (used as reference; instructor
+# imports it via GoPhish UI at Admin → Email Templates → Import Email).
+- name: Deploy phishing email template reference file
+  ansible.builtin.copy:
+    src: phishing-email.html
+    dest: "{{ phishing_simulator_compose_dir }}/phishing_email_template.html"
+    owner: root
+    group: root
+    mode: "0644"
+
+# --- LAUNCH_CAMPAIGN (Gate 1) tooling. Additive: the manual UI flow is untouched.
+- name: Deploy phishing campaign launcher script
+  ansible.builtin.copy:
+    src: launch_campaign.py
+    dest: "{{ phishing_simulator_compose_dir }}/launch_campaign.py"
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Render phishing campaign launcher configuration (roster + object names)
+  ansible.builtin.template:
+    src: launch_campaign.json.j2
+    dest: "{{ phishing_simulator_compose_dir }}/launch_campaign.json"
+    owner: root
+    group: root
+    mode: "0644"
+
+# Fail-fast verification: do NOT let the deploy finish green if GoPhish is not
+# actually ready to launch campaigns. Without this, a recreated `gophish-data`
+# volume could leave the platform half-configured while the play still reported
+# failed=0, blocking the trainee in Phase 2 (levels 12-18, 22, 24).
+- name: Assert that the GoPhish API key was recovered
+  ansible.builtin.assert:
+    that:
+      - gophish_api_key.stdout | default('') | trim | length > 0
+    fail_msg: >-
+      GoPhish API key could not be retrieved from the database. GoPhish is NOT
+      operational and the instructor cannot launch phishing campaigns. No mail
+      will reach Mailpit and training levels 12-18, 22 and 24 will be unsolvable.
+    success_msg: "GoPhish API key successfully retrieved."
+
+- name: Re-fetch GoPhish SMTP sending profiles for verification
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:{{ phishing_simulator_admin_port }}/api/smtp/"
+    method: GET
+    headers:
+      Authorization: "{{ gophish_api_key.stdout | trim }}"
+    status_code: [200]
+  register: gophish_smtp_verify
+  retries: 12
+  delay: 5
+  until: gophish_smtp_verify.status | default(0) == 200
+
+- name: Assert that the MailHog Lab Relay SMTP profile exists
+  ansible.builtin.assert:
+    that:
+      - >-
+        gophish_smtp_verify.json | default([])
+        | selectattr('name', 'equalto', 'MailHog Lab Relay')
+        | list | length > 0
+    fail_msg: >-
+      The 'MailHog Lab Relay' SMTP sending profile is missing from GoPhish.
+      Campaigns cannot be launched, no mail reaches Mailpit, and training
+      levels 12-18, 22 and 24 become unsolvable.
+    success_msg: "MailHog Lab Relay SMTP profile is present; GoPhish is ready."
+
+# --- Email template content guardrail (check-only, idempotent) --------------
+# The deployed reference template feeds the phishing email a trainee analyses.
+# Fail loudly if it loses a literal a training level relies on, rather than
+# letting the level silently become unanswerable.
+- name: Read deployed phishing email template for content checks
+  ansible.builtin.slurp:
+    src: "{{ phishing_simulator_compose_dir }}/phishing_email_template.html"
+  register: phishing_simulator_email_template
+  changed_when: false
+
+- name: Assert phishing email template keeps the training answer literals
+  vars:
+    tmpl: "{{ phishing_simulator_email_template.content | b64decode }}"
+  ansible.builtin.assert:
+    that:
+      - "'URGENT' in tmpl"
+      - "'SEC-2024-11' in tmpl"
+      - "('.RId' in tmpl) or ('rid' in tmpl)"
+    fail_msg: >-
+      The deployed phishing email template is missing a literal the training
+      needs: 'URGENT' (L13 heading), 'SEC-2024-11' (L18) or the GoPhish RId/rid
+      tracking token (L15). Those levels would become unsolvable.
+    success_msg: >-
+      Phishing email template retains URGENT / SEC-2024-11 / RId (L13/L18/L15).
+  changed_when: false

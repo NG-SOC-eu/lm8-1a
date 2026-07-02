@@ -1,0 +1,184 @@
+---
+# Playbook for PUC2-Sub Case 2a - Phishing Attack Training Scenario
+- name: Verify control node prerequisites
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: Install ansible.windows collection
+      command: >
+        ansible-galaxy collection install ansible.windows
+        --collections-path /usr/share/ansible/collections
+      changed_when: false
+      failed_when: false
+
+    - name: Check for ansible.windows collection
+      ansible.builtin.command:
+        cmd: ansible-galaxy collection list ansible.windows --format json
+      register: ansible_windows_collection
+      changed_when: false
+      failed_when: ansible_windows_collection.rc != 0
+
+    - name: Parse ansible.windows collection metadata
+      ansible.builtin.set_fact:
+        ansible_windows_collections: >-
+          {{
+            ansible_windows_collection.stdout
+            | from_json
+            | dict2items
+            | selectattr('value', 'mapping')
+            | map(attribute='value')
+            | map('dict2items')
+            | flatten
+            | selectattr('key', 'equalto', 'ansible.windows')
+            | items2dict(key_name='key', value_name='value')
+          }}
+
+    - name: Abort when ansible.windows collection is missing
+      ansible.builtin.assert:
+        that:
+          - >-
+            ansible_windows_collections | dict2items |
+            selectattr('key', 'equalto', 'ansible.windows') |
+            list | length > 0
+        fail_msg: >-
+          The ansible.windows collection is missing. Run provisioning/run_playbook.sh to
+          install required collections before executing this playbook directly.
+        success_msg: ansible.windows collection is available.
+
+# Configure /etc/hosts on all Linux nodes so internal hostnames resolve
+# without a DNS server. Windows nodes resolve via the trainee-workstation shortcuts.
+- name: Configure internal hostname resolution on Linux hosts
+  hosts: all:!trainees
+  become: true
+  gather_facts: false
+  tasks:
+    - name: Add internal hostnames to /etc/hosts
+      ansible.builtin.blockinfile:
+        path: /etc/hosts
+        marker: "# {mark} CyberRangeCZ lm8-subcase-2a internal hostnames"
+        block: |
+          10.20.10.40  lms.internal
+          10.20.10.50  phishing-simulator.internal
+          10.20.10.60  mail-relay.internal mailhog.internal
+          10.20.20.10  rep-core.internal
+          10.20.30.10  reporting.internal
+
+###### Windows nodes: basic OS configuration first
+- name: Configure Windows Basic
+  hosts: trainee-workstation-01, trainee-workstation-02
+  gather_facts: no
+  roles:
+    - windows
+
+###### Backend: REP core microservice nginx proxy
+- name: Configure REP core services
+  hosts: rep-scheduler, rep-live-session, rep-quiz-engine, rep-practical-labs
+  become: true
+  roles:
+    - role: rep-core
+
+###### Backend: LMS course content portal (port 8080 on rep-practical-labs)
+# nginx is already installed by rep-core above; this role adds a second vhost.
+- name: Deploy LMS course content portal
+  hosts: rep-practical-labs
+  become: true
+  roles:
+    - role: lms-content
+
+###### Backend: GoPhish phishing simulation platform
+- name: Deploy phishing simulator (GoPhish)
+  hosts: phishing-simulator
+  become: true
+  roles:
+    - role: phishing-simulator
+
+###### Backend: Mailpit SMTP relay for sandboxed email delivery
+- name: Deploy mail relay (Mailpit)
+  hosts: mail-relay
+  become: true
+  roles:
+    - role: mail-relay
+
+###### Analytics: Grafana reporting workspace (with PostgreSQL)
+- name: Prepare the reporting workspace analytics stack
+  hosts: reporting-workspace
+  become: true
+  roles:
+    - role: reporting-workspace
+
+###### Cross-host: persist the GoPhish API key so the instructor never has to
+###### generate it in the UI or export it in the shell. This is ADDITIVE: the
+###### manual flow still works. The key is read from the phishing-simulator play
+###### above (register: gophish_api_key) and lands in two places:
+######   * /opt/phishing-simulator/gophish_api_key  -> read by launch_campaign.py
+######   * /opt/rep-scoring/gophish.env             -> sourced by scoring tooling
+- name: Persist GoPhish API key locally on phishing-simulator for launch tooling
+  hosts: phishing-simulator
+  become: true
+  gather_facts: false
+  tasks:
+    - name: Write GoPhish API key to a local file for launch_campaign.py
+      ansible.builtin.copy:
+        dest: /opt/phishing-simulator/gophish_api_key
+        content: "{{ gophish_api_key.stdout | trim }}\n"
+        owner: root
+        group: root
+        mode: "0600"
+      no_log: true
+
+- name: Persist GoPhish API key on reporting-workspace for scoring tooling
+  hosts: reporting-workspace
+  become: true
+  gather_facts: false
+  tasks:
+    - name: Write GoPhish API key env file for the scoring engine
+      ansible.builtin.copy:
+        dest: /opt/rep-scoring/gophish.env
+        content: "GOPHISH_API_KEY={{ hostvars['phishing-simulator'].gophish_api_key.stdout | trim }}\n"
+        owner: root
+        group: root
+        mode: "0600"
+      no_log: true
+
+###### Frontend: instructor console
+- name: Personalise the instructor console
+  hosts: instructor-console
+  become: true
+  roles:
+    - role: instructor-console
+
+###### Cross-host: authorize instructor SSH key on LMS host for content publishing
+- name: Authorize instructor SSH key on LMS for passwordless content publishing
+  hosts: rep-practical-labs
+  become: true
+  gather_facts: false
+  tasks:
+    - name: Read instructor SSH public key from instructor-console
+      ansible.builtin.slurp:
+        src: /home/instructor/.ssh/id_ed25519.pub
+      register: instructor_pub_key_raw
+      delegate_to: instructor-console
+
+    - name: Ensure .ssh directory exists for LMS deploy user
+      ansible.builtin.file:
+        path: "/home/{{ ansible_user }}/.ssh"
+        state: directory
+        owner: "{{ ansible_user }}"
+        mode: "0700"
+
+    - name: Authorize instructor key for passwordless SCP to LMS
+      ansible.builtin.lineinfile:
+        path: "/home/{{ ansible_user }}/.ssh/authorized_keys"
+        line: "{{ instructor_pub_key_raw.content | b64decode | trim }}"
+        create: true
+        owner: "{{ ansible_user }}"
+        mode: "0600"
+
+###### Frontend: Windows trainee workstations
+- name: Configure Windows trainee workstations
+  hosts: trainee-workstation-01, trainee-workstation-02
+  gather_facts: no
+  vars_files:
+    - ../group_vars/trainees.yml
+  roles:
+    - trainee-workstation

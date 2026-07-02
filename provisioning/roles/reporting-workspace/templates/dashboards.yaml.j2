@@ -1,0 +1,10 @@
+apiVersion: 1
+
+providers:
+{% for dashboard in reporting_workspace_dashboards %}
+  - name: {{ dashboard.folder }}
+    type: file
+    disableDeletion: false
+    options:
+      path: {{ reporting_workspace_dashboards_dir }}/{{ dashboard.folder | lower }}
+{% endfor %}

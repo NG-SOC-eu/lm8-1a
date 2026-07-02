@@ -1,0 +1,32 @@
+server {
+    listen {{ rep_core_virtual_host.listen }}{% if rep_core_tls_enabled %} ssl{% endif %};
+    server_name {{ rep_core_virtual_host.server_name }};
+    root {{ rep_core_virtual_host.root }};
+
+    access_log {{ rep_core_virtual_host.access_log }};
+    error_log {{ rep_core_virtual_host.error_log }};
+
+{% if rep_core_tls_enabled %}
+    ssl_certificate {{ rep_core_tls.certificate_path }};
+    ssl_certificate_key {{ rep_core_tls.key_path }};
+{% endif %}
+
+    location / {
+        proxy_set_header Host $host;
+{% for header_name, header_value in rep_core_virtual_host.proxy_headers.items() %}
+        proxy_set_header {{ header_name }} {{ header_value }};
+{% endfor %}
+        proxy_pass http://rep_core_upstream;
+    }
+
+    location = {{ rep_core_virtual_host.healthcheck_path }} {
+        access_log off;
+        proxy_pass http://rep_core_upstream;
+    }
+}
+
+upstream rep_core_upstream {
+{% for upstream in rep_core_virtual_host.upstreams %}
+    server {{ upstream.server }} max_fails=3 fail_timeout=30s;
+{% endfor %}
+}

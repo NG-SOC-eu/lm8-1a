@@ -1,0 +1,112 @@
+---
+- name: Install Docker prerequisites
+  ansible.builtin.apt:
+    name:
+      - ca-certificates
+      - curl
+    state: present
+    update_cache: true
+
+- name: Ensure /etc/apt/keyrings directory exists
+  ansible.builtin.file:
+    path: /etc/apt/keyrings
+    state: directory
+    mode: "0755"
+
+- name: Add Docker official GPG key
+  ansible.builtin.get_url:
+    url: https://download.docker.com/linux/ubuntu/gpg
+    dest: /etc/apt/keyrings/docker.asc
+    mode: "0644"
+
+- name: Add Docker apt repository
+  ansible.builtin.apt_repository:
+    repo: >-
+      deb [arch=amd64 signed-by=/etc/apt/keyrings/docker.asc]
+      https://download.docker.com/linux/ubuntu
+      {{ ansible_distribution_release }} stable
+    filename: docker
+    state: present
+    update_cache: true
+
+- name: Install Docker engine and Compose plugin
+  ansible.builtin.apt:
+    name:
+      - docker-ce
+      - docker-ce-cli
+      - containerd.io
+      - docker-buildx-plugin
+      - docker-compose-plugin
+    state: present
+
+- name: Ensure Docker service is running and enabled
+  ansible.builtin.service:
+    name: docker
+    state: started
+    enabled: true
+
+- name: Configure Docker daemon registry mirror
+  ansible.builtin.copy:
+    dest: /etc/docker/daemon.json
+    content: |
+      {
+        "registry-mirrors": ["https://mirror.gcr.io"]
+      }
+    mode: "0644"
+  notify: restart docker daemon
+
+- name: Apply Docker daemon configuration
+  ansible.builtin.meta: flush_handlers
+
+- name: Create MailHog compose directory
+  ansible.builtin.file:
+    path: "{{ mail_relay_compose_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0750"
+
+- name: Log in to Docker Hub to avoid pull rate limits
+  ansible.builtin.command:
+    cmd: docker login --username "{{ dockerhub_username }}" --password-stdin
+    stdin: "{{ dockerhub_password }}"
+  no_log: true
+  when:
+    - dockerhub_username | default('') | length > 0
+    - dockerhub_password | default('') | length > 0
+
+- name: Deploy MailHog Docker Compose definition
+  ansible.builtin.template:
+    src: docker-compose.yml.j2
+    dest: "{{ mail_relay_compose_dir }}/docker-compose.yml"
+    owner: root
+    group: root
+    mode: "0640"
+  notify: restart mailpit
+
+- name: Apply pending MailHog restarts
+  ansible.builtin.meta: flush_handlers
+
+- name: Start MailHog service
+  ansible.builtin.command:
+    cmd: docker compose up -d
+    chdir: "{{ mail_relay_compose_dir }}"
+  register: mailpit_start
+  retries: 3
+  delay: 30
+  until: mailpit_start.rc == 0
+  changed_when: "'Started' in mailpit_start.stdout or 'Created' in mailpit_start.stdout"
+
+- name: Wait for MailHog SMTP port to become available
+  ansible.builtin.wait_for:
+    host: 127.0.0.1
+    port: "{{ mail_relay_smtp_port }}"
+    timeout: "{{ mail_relay_healthcheck.timeout }}"
+    sleep: 2
+
+- name: Validate MailHog WebUI is responding
+  ansible.builtin.uri:
+    url: "{{ mail_relay_healthcheck.url }}"
+    method: GET
+    status_code: "{{ mail_relay_healthcheck.status_code }}"
+  changed_when: false

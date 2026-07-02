@@ -1,0 +1,13 @@
+# Instructor console shortcuts
+if [ -n "${BASH_VERSION:-}" ]; then
+{% for shortcut in instructor_console_shortcuts %}
+{{ shortcut.name | upper }}() {
+    {{ shortcut.command }}
+}
+export -f {{ shortcut.name | upper }}
+{% endfor %}
+else
+{% for shortcut in instructor_console_shortcuts %}
+alias {{ shortcut.name | upper }}='{{ shortcut.command | replace("'", "'\"'\"'") }}'
+{% endfor %}
+fi

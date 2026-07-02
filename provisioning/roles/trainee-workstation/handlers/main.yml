@@ -1,0 +1,5 @@
+---
+- name: restart rep collector
+  ansible.windows.win_service:
+    name: "{{ trainee_workstation_collector.service_name }}"
+    state: restarted

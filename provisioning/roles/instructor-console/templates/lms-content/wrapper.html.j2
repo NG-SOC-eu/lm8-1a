@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<!--
+  LMS Wrapper Template — PUC2-Sub Case 2a
+  Managed by: lms_publish.py on the instructor-console.
+
+  This file contains the page structure, CSS, navigation, and fixed tabs.
+  To update COURSE CONTENT edit the module HTML files alongside this file:
+    module1.html  — Module 1 card HTML
+    module2.html  — Module 2 card HTML
+    module3.html  — Module 3 card HTML
+
+  Then run PUBLISH_LMS from the instructor console to deploy.
+  DO NOT edit the <!-- MODULE*_CONTENT --> markers — they are replaced by lms_publish.py.
+-->
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{{ instructor_console_lms_course_title }}</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: Arial, sans-serif; background: #f0f2f5; color: #222; }
+    header { background: #1a3a5c; color: #fff; padding: 20px 40px; }
+    header h1 { font-size: 22px; }
+    header p  { font-size: 13px; margin-top: 4px; opacity: .8; }
+    nav { display: flex; gap: 4px; background: #122a45; padding: 0 40px; }
+    nav button { background: none; border: none; color: #adc6e0; padding: 12px 18px;
+                 cursor: pointer; font-size: 14px; border-bottom: 3px solid transparent; }
+    nav button.active, nav button:hover { color: #fff; border-bottom-color: #4a9fd4; }
+    main { max-width: 860px; margin: 30px auto; padding: 0 20px; }
+    .tab { display: none; }
+    .tab.active { display: block; }
+    .card { background: #fff; border-radius: 6px; padding: 28px 32px;
+            box-shadow: 0 1px 4px rgba(0,0,0,.1); margin-bottom: 20px; }
+    .card h2 { font-size: 18px; color: #1a3a5c; margin-bottom: 12px; }
+    .card h3 { font-size: 15px; color: #2c5282; margin: 18px 0 8px; }
+    .card p, .card li { font-size: 14px; line-height: 1.7; }
+    .card ul, .card ol { padding-left: 22px; margin-top: 6px; }
+    .badge { display: inline-block; padding: 3px 10px; border-radius: 12px;
+             font-size: 12px; font-weight: bold; margin-bottom: 10px; }
+    .badge.theory { background: #e3f2fd; color: #1565c0; }
+    .badge.exercise { background: #fce4ec; color: #b71c1c; }
+    .badge.complete { background: #e8f5e9; color: #1b5e20; }
+    .highlight { background: #fff8e1; border-left: 4px solid #f9a825;
+                 padding: 10px 14px; margin: 12px 0; border-radius: 0 4px 4px 0; }
+    .checklist label { display: flex; align-items: flex-start; gap: 10px;
+                       margin-bottom: 10px; cursor: pointer; font-size: 14px; }
+    .checklist input { margin-top: 3px; width: 16px; height: 16px; }
+    .btn { display: inline-block; padding: 10px 22px; border-radius: 4px;
+           border: none; cursor: pointer; font-size: 14px; font-weight: bold;
+           margin-top: 14px; }
+    .btn-primary { background: #1a3a5c; color: #fff; }
+    .btn-primary:hover { background: #2c5282; }
+    .btn-danger { background: #c0392b; color: #fff; }
+    .url-box { background: #f5f5f5; border: 1px solid #ddd; border-radius: 4px;
+               padding: 8px 12px; font-family: monospace; font-size: 13px;
+               word-break: break-all; margin: 8px 0; }
+    .score-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; margin-top: 12px; }
+    .score-item { background: #f8f9fa; border-radius: 6px; padding: 14px;
+                  border-left: 4px solid #4a9fd4; }
+    .score-item .weight { font-size: 22px; font-weight: bold; color: #1a3a5c; }
+    .score-item .label { font-size: 12px; color: #666; margin-top: 2px; }
+    footer { text-align: center; padding: 20px; font-size: 12px; color: #888; }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>{{ instructor_console_lms_course_title }}</h1>
+  <p>CyberRangeCZ &mdash; Hands-on Educational Platform &mdash; PUC2-Sub Case 2a</p>
+</header>
+
+<nav>
+  <button class="active" onclick="showTab('overview', this)">Overview</button>
+  <button onclick="showTab('module1', this)">Module 1 &mdash; Sender Analysis</button>
+  <button onclick="showTab('module2', this)">Module 2 &mdash; Content Red Flags</button>
+  <button onclick="showTab('module3', this)">Module 3 &mdash; Attachments &amp; Reporting</button>
+  <button onclick="showTab('exercise', this)">Practical Exercise</button>
+  <button onclick="showTab('feedback', this)">My Feedback</button>
+</nav>
+
+<main>
+
+<!-- OVERVIEW TAB — edit this section directly in wrapper.html to update the overview -->
+<div id="overview" class="tab active">
+  <div class="card">
+    <span class="badge complete">Course Overview</span>
+    <h2>Phishing Attack Awareness Training</h2>
+    <p>This self-paced course trains you to identify and respond to phishing attacks.
+       Complete all three theory modules before starting the practical exercise.</p>
+    <h3>Learning Objectives</h3>
+    <ol>
+      <li>Scrutinise sender information for inconsistencies</li>
+      <li>Analyse email content for red flags (grammar errors, urgency, threats)</li>
+      <li>Verify attachments and embedded links for legitimacy</li>
+      <li>Report suspicious emails using organisational protocols</li>
+    </ol>
+    <h3>Assessment Scoring</h3>
+    <div class="score-grid">
+      <div class="score-item"><div class="weight">40%</div><div class="label">Detection accuracy (red flags identified)</div></div>
+      <div class="score-item"><div class="weight">30%</div><div class="label">Incident report completeness</div></div>
+      <div class="score-item"><div class="weight">20%</div><div class="label">Time to detection and report</div></div>
+      <div class="score-item"><div class="weight">+10%</div><div class="label">Bonus: did NOT click the phishing link</div></div>
+    </div>
+    <h3>Your Lab Inbox</h3>
+    <p>Simulated phishing emails will be delivered to your MailHog inbox:</p>
+    <div class="url-box">http://mail-relay.internal:8025/</div>
+    <button class="btn btn-primary" onclick="showTab('module1', document.querySelectorAll('nav button')[1])">Start with Module 1 &rarr;</button>
+  </div>
+</div>
+
+<!-- MODULE 1 TAB — content injected by lms_publish.py from module1.html -->
+<div id="module1" class="tab">
+<!-- MODULE1_CONTENT -->
+</div>
+
+<!-- MODULE 2 TAB — content injected by lms_publish.py from module2.html -->
+<div id="module2" class="tab">
+<!-- MODULE2_CONTENT -->
+</div>
+
+<!-- MODULE 3 TAB — content injected by lms_publish.py from module3.html -->
+<div id="module3" class="tab">
+<!-- MODULE3_CONTENT -->
+</div>
+
+<!-- EXERCISE TAB — system-defined, edit in wrapper.html if needed -->
+<div id="exercise" class="tab">
+  <div class="card">
+    <span class="badge exercise">Practical Exercise</span>
+    <h2>Phishing Detection Exercise</h2>
+    <p>You are now ready to begin the practical exercise. A simulated phishing email
+       has been (or will be) delivered to your lab inbox.</p>
+
+    <h3>Step 1 &mdash; Check Your Lab Inbox</h3>
+    <p>Open the MailHog WebUI to view your simulated inbox:</p>
+    <div class="url-box">http://mail-relay.internal:8025/</div>
+
+    <h3>Step 2 &mdash; Analyse the Email</h3>
+    <p>Using the checklists from Modules 1&ndash;3, inspect the email and identify
+       as many phishing indicators as possible. Do <strong>NOT</strong> click any
+       links unless you are deliberately testing detection (clicking the phishing
+       link will be recorded).</p>
+
+    <h3>Step 3 &mdash; Submit Your Detection Report</h3>
+    <p>Document your findings in the incident report form below and submit it.
+       Include every red flag you identified.</p>
+
+    <form id="reportForm" onsubmit="submitReport(event)" style="margin-top:16px;">
+      <div style="margin-bottom:12px;">
+        <label style="font-size:14px;font-weight:bold;">Your name / trainee ID</label><br>
+        <input type="text" id="trainee" required style="width:100%;padding:8px;margin-top:4px;border:1px solid #ccc;border-radius:4px;">
+      </div>
+      <div style="margin-bottom:12px;">
+        <label style="font-size:14px;font-weight:bold;">Is this email suspicious? *</label><br>
+        <label style="font-size:14px;"><input type="radio" name="verdict" value="yes" required> Yes &mdash; this is a phishing attempt</label><br>
+        <label style="font-size:14px;"><input type="radio" name="verdict" value="no"> No &mdash; this email appears legitimate</label>
+      </div>
+      <div style="margin-bottom:12px;">
+        <label style="font-size:14px;font-weight:bold;">Red flags identified (one per line) *</label><br>
+        <textarea id="indicators" required rows="6" style="width:100%;padding:8px;margin-top:4px;border:1px solid #ccc;border-radius:4px;font-size:13px;" placeholder="Example:&#10;- Sender domain does not match company domain&#10;- Urgent language: 'account suspended in 24h'&#10;- Link points to phishing-simulator.internal, not company domain&#10;- Generic salutation 'Dear [FirstName]'"></textarea>
+      </div>
+      <div style="margin-bottom:12px;">
+        <label style="font-size:14px;font-weight:bold;">Did you click the link in the email?</label><br>
+        <label style="font-size:14px;"><input type="radio" name="clicked" value="no"> No &mdash; I did not click the link</label><br>
+        <label style="font-size:14px;"><input type="radio" name="clicked" value="yes"> Yes &mdash; I clicked the link (note: this is recorded)</label>
+      </div>
+      <button type="submit" class="btn btn-danger">Submit Detection Report</button>
+    </form>
+    <div id="reportResult" style="display:none;" class="highlight" style="margin-top:16px;"></div>
+  </div>
+</div>
+
+<!-- FEEDBACK TAB — system-defined -->
+<div id="feedback" class="tab">
+  <div class="card">
+    <span class="badge complete">Results</span>
+    <h2>Your Personalised Feedback</h2>
+    <p>After the instructor scores the campaign your feedback will be delivered to your lab
+       email inbox. Open the address below in a new tab to read it:</p>
+    <div class="url-box">http://mail-relay.internal:8025/</div>
+    <p style="margin-top:14px;">Look for a message with subject
+       <strong>[Training Platform] Your Phishing Awareness Score</strong>.
+       It contains your total score, component breakdown, missed indicators, and
+       recommended study modules.</p>
+    <h3 style="margin-top:20px;">Individual Feedback Page</h3>
+    <p>Once the instructor runs <strong>PUBLISH_FEEDBACK</strong> from the console, your
+       personal HTML feedback page will be available at:</p>
+    <div class="url-box">http://lms.internal:8080/feedback/&lt;your-email&gt;.html</div>
+    <p style="margin-top:8px;">or browse all published feedback at:</p>
+    <div class="url-box">http://lms.internal:8080/feedback/</div>
+    <h3 style="margin-top:20px;">Cohort Dashboard</h3>
+    <p>The instructor can view cohort-level metrics in the Grafana reporting workspace:</p>
+    <div class="url-box">http://reporting.internal:3000/</div>
+  </div>
+</div>
+
+</main>
+
+<footer>
+  CyberRangeCZ &mdash; PUC2-Sub Case 2a &mdash; Hands-on Educational Platform &mdash;
+  Reporting Workspace: <a href="http://reporting.internal:3000/" style="color:#4a9fd4;">http://reporting.internal:3000/</a>
+</footer>
+
+<script>
+function showTab(id, btn) {
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('nav button').forEach(b => b.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+  btn.classList.add('active');
+}
+
+function submitReport(e) {
+  e.preventDefault();
+  var trainee    = document.getElementById('trainee').value;
+  var indicators = document.getElementById('indicators').value;
+  var verdict    = document.querySelector('input[name="verdict"]:checked');
+  var clicked    = document.querySelector('input[name="clicked"]:checked');
+
+  var result = document.getElementById('reportResult');
+  result.style.display = 'block';
+  result.innerHTML =
+    '<strong>Report submitted.</strong><br>' +
+    'Trainee: ' + trainee + '<br>' +
+    'Verdict: ' + (verdict ? verdict.value : 'not selected') + '<br>' +
+    'Link clicked: ' + (clicked ? clicked.value : 'not answered') + '<br>' +
+    'Indicators documented: ' + indicators.split('\n').filter(l => l.trim()).length + '<br><br>' +
+    'Your personalised feedback will arrive in your lab inbox within 5 minutes ' +
+    'once the instructor scores the campaign. ' +
+    'Check <a href="http://mail-relay.internal:8025/">http://mail-relay.internal:8025/</a> ' +
+    'for your score and improvement recommendations.<br><br>' +
+    'Cohort results: <a href="http://reporting.internal:3000/">Grafana Dashboard &rarr;</a>';
+}
+</script>
+
+</body>
+</html>

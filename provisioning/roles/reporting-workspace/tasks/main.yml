@@ -1,0 +1,225 @@
+- name: Install and initialise PostgreSQL for REP reporting data
+  ansible.builtin.include_tasks: install_postgresql.yml
+
+- name: Install Python psycopg2 for scoring engine
+  ansible.builtin.package:
+    name: python3-psycopg2
+    state: present
+
+- name: Ensure scoring engine directory exists
+  ansible.builtin.file:
+    path: "{{ reporting_workspace_scoring_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Deploy scoring engine script
+  ansible.builtin.copy:
+    src: score_campaign.py
+    dest: "{{ reporting_workspace_scoring_dir }}/score_campaign.py"
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Deploy feedback delivery script
+  ansible.builtin.copy:
+    src: deliver_feedback.py
+    dest: "{{ reporting_workspace_scoring_dir }}/deliver_feedback.py"
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Configure Grafana repositories
+  when: reporting_workspace_grafana_repositories | length > 0
+  ansible.builtin.include_tasks: configure_grafana_repository.yml
+  loop: "{{ reporting_workspace_grafana_repositories }}"
+  loop_control:
+    loop_var: grafana_repository
+    label: "{{ grafana_repository.name | default(grafana_repository.apt_repository.repo | default('grafana repository')) }}"
+
+- name: Install Grafana package
+  ansible.builtin.package:
+    name: "{{ reporting_workspace_grafana_package }}"
+    state: present
+
+- name: Ensure Grafana service is enabled and started
+  ansible.builtin.service:
+    name: "{{ reporting_workspace_grafana_service }}"
+    enabled: true
+    state: started
+  notify: restart grafana
+
+- name: Ensure grafana group exists
+  ansible.builtin.group:
+    name: grafana
+    system: true
+
+- name: Ensure grafana user exists
+  ansible.builtin.user:
+    name: grafana
+    group: grafana
+    system: true
+
+- name: Ensure Grafana provisioning directories exist
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: root
+    group: grafana
+    mode: "0750"
+  loop:
+    - "{{ reporting_workspace_datasource_template | dirname }}"
+    - "{{ reporting_workspace_dashboards_dir }}"
+
+- name: Deploy Grafana main configuration
+  ansible.builtin.template:
+    src: grafana.ini.j2
+    dest: "{{ reporting_workspace_grafana_ini }}"
+    owner: root
+    group: grafana
+    mode: "0640"
+  notify: restart grafana
+
+- name: Configure Grafana data sources for REP
+  ansible.builtin.template:
+    src: datasources.yaml.j2
+    dest: "{{ reporting_workspace_datasource_template }}"
+    owner: root
+    group: grafana
+    mode: "0640"
+  notify: restart grafana
+  no_log: true
+
+- name: Register Grafana dashboard providers
+  ansible.builtin.template:
+    src: dashboards.yaml.j2
+    dest: "{{ reporting_workspace_dashboards_dir }}/rep-provider.yaml"
+    owner: root
+    group: grafana
+    mode: "0640"
+  notify: restart grafana
+
+- name: Ensure dashboard folders exist
+  ansible.builtin.file:
+    path: "{{ reporting_workspace_dashboards_dir }}/{{ dashboard.folder | lower }}"
+    state: directory
+    owner: root
+    group: grafana
+    mode: "0750"
+  loop: "{{ reporting_workspace_dashboards | list }}"
+  loop_control:
+    loop_var: dashboard
+
+- name: Deploy REP dashboards
+  ansible.builtin.template:
+    src: dashboard.json.j2
+    dest: "{{ reporting_workspace_dashboards_dir }}/{{ dashboard.folder | lower }}/{{ dashboard.file }}"
+    owner: root
+    group: grafana
+    mode: "0640"
+  loop: "{{ reporting_workspace_dashboards | list }}"
+  loop_control:
+    loop_var: dashboard
+  notify: restart grafana
+
+- name: Apply pending Grafana restarts and validate service
+  block:
+    - name: Apply pending Grafana restarts before health checks
+      ansible.builtin.meta: flush_handlers
+
+    - name: Ensure Grafana service is enabled and started after provisioning
+      ansible.builtin.service:
+        name: "{{ reporting_workspace_grafana_service }}"
+        enabled: true
+        state: started
+
+  rescue:
+    - name: Read Grafana service status
+      ansible.builtin.command:
+        cmd: systemctl status {{ reporting_workspace_grafana_service }} --no-pager
+      register: grafana_status
+      changed_when: false
+      failed_when: false
+
+    - name: Read Grafana journal
+      ansible.builtin.command:
+        cmd: journalctl -u {{ reporting_workspace_grafana_service }} -n 100 --no-pager
+      register: grafana_journal
+      changed_when: false
+      failed_when: false
+
+    - name: Fail with Grafana diagnostics
+      ansible.builtin.fail:
+        msg: |-
+          Unable to start or restart Grafana.
+
+          systemctl status:
+          {{ grafana_status.stdout | default('') }}
+
+          journalctl:
+          {{ grafana_journal.stdout | default('') }}
+
+- name: Wait for Grafana service port to become available
+  ansible.builtin.wait_for:
+    host: 127.0.0.1
+    port: 3000
+    timeout: 30
+    sleep: 1
+  when:
+    - reporting_workspace_healthcheck is defined
+    - reporting_workspace_healthcheck.url | length > 0
+
+- name: Validate Grafana is responding
+  ansible.builtin.uri:
+    url: "{{ reporting_workspace_healthcheck.url }}"
+    method: GET
+    status_code: >-
+      {{
+        [reporting_workspace_healthcheck.status_code | int]
+        + (
+          reporting_workspace_healthcheck.status_code_alternatives | default([])
+          | map('int')
+          | list
+        )
+      }}
+    return_content: true
+    headers:
+      Accept: application/json
+  register: reporting_workspace_health
+  failed_when:
+    - >-
+      reporting_workspace_health.json is not defined
+      and (
+        reporting_workspace_healthcheck.failed_when_non_json
+        | default(
+          'Grafana health endpoint %s did not return JSON. Status: %s, Body: %s'
+          % (
+            reporting_workspace_healthcheck.url,
+            reporting_workspace_health.status | default('unknown'),
+            reporting_workspace_health.content | default('') | truncate(200, True, '...')
+          ),
+          true
+        )
+        | bool
+      )
+    - >-
+      reporting_workspace_health.json is defined
+      and (reporting_workspace_health.json.database | default('')) != 'ok'
+  changed_when: false
+  when:
+    - reporting_workspace_healthcheck is defined
+    - reporting_workspace_healthcheck.url | length > 0
+
+- name: Set Grafana admin password for lab access
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:3000/api/admin/users/1/password"
+    method: PUT
+    url_username: "{{ reporting_workspace_grafana_admin_user }}"
+    url_password: "{{ reporting_workspace_grafana_admin_password }}"
+    force_basic_auth: true
+    body_format: json
+    body:
+      password: "{{ reporting_workspace_grafana_admin_password }}"
+    status_code: [200]
+  no_log: true

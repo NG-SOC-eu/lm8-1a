@@ -1,0 +1,129 @@
+- name: Ensure instructor console group exists
+  ansible.builtin.group:
+    name: "{{ instructor_console_user }}"
+    system: true
+
+- name: Ensure instructor console user exists
+  ansible.builtin.user:
+    name: "{{ instructor_console_user }}"
+    group: "{{ instructor_console_user }}"
+    shell: /bin/bash
+    create_home: true
+
+- name: Ensure instructor console workspace exists
+  ansible.builtin.file:
+    path: "{{ instructor_console_workspace }}"
+    state: directory
+    owner: "{{ instructor_console_user }}"
+    group: "{{ instructor_console_user }}"
+    mode: "0750"
+
+- name: Generate SSH key pair for instructor (enables passwordless SCP to LMS)
+  ansible.builtin.user:
+    name: "{{ instructor_console_user }}"
+    generate_ssh_key: true
+    ssh_key_type: ed25519
+    ssh_key_comment: "instructor@cyberrange-lm8-2a"
+  register: instructor_ssh_key_result
+
+- name: Ensure LMS content directory exists
+  ansible.builtin.file:
+    path: "{{ instructor_console_lms_content_dir }}"
+    state: directory
+    owner: "{{ instructor_console_user }}"
+    group: "{{ instructor_console_user }}"
+    mode: "0755"
+
+- name: Deploy LMS wrapper template
+  ansible.builtin.template:
+    src: lms-content/wrapper.html.j2
+    dest: "{{ instructor_console_lms_content_dir }}/wrapper.html"
+    owner: "{{ instructor_console_user }}"
+    group: "{{ instructor_console_user }}"
+    mode: "0644"
+
+- name: Deploy editable LMS module content files
+  ansible.builtin.copy:
+    src: "lms-content/{{ item }}"
+    dest: "{{ instructor_console_lms_content_dir }}/{{ item }}"
+    owner: "{{ instructor_console_user }}"
+    group: "{{ instructor_console_user }}"
+    mode: "0644"
+    force: false
+  loop:
+    - module1.html
+    - module2.html
+    - module3.html
+
+- name: Deploy LMS content publisher script
+  ansible.builtin.copy:
+    src: lms_publish.py
+    dest: "{{ instructor_console_workspace }}/lms_publish.py"
+    owner: "{{ instructor_console_user }}"
+    group: "{{ instructor_console_user }}"
+    mode: "0755"
+
+- name: Deploy Gate 2 one-shot finalize_feedback script
+  ansible.builtin.copy:
+    src: finalize_feedback.sh
+    dest: "{{ instructor_console_workspace }}/finalize_feedback.sh"
+    owner: "{{ instructor_console_user }}"
+    group: "{{ instructor_console_user }}"
+    mode: "0755"
+
+- name: Deploy tmux configuration for instructor console
+  ansible.builtin.template:
+    src: tmux.conf.j2
+    dest: "{{ instructor_console_tmux_conf }}"
+    owner: "{{ instructor_console_user }}"
+    group: "{{ instructor_console_user }}"
+    mode: "0640"
+  notify: reload profile for instructor console
+
+- name: Publish instructor console shell shortcuts
+  ansible.builtin.template:
+    src: instructor-console.sh.j2
+    dest: "{{ instructor_console_aliases }}"
+    owner: root
+    group: root
+    mode: "0755"
+  notify: reload profile for instructor console
+
+- name: Validate tmux configuration
+  ansible.builtin.command:
+    cmd: "bash -lc 'tmux -f {{ instructor_console_tmux_conf }} -L ansible-test start-server \\; list-keys \\; kill-server'"
+  environment:
+    TERM: xterm-256color
+  register: instructor_console_tmux_validation
+  changed_when: false
+  failed_when: instructor_console_tmux_validation.rc != 0
+
+- name: Verify instructor console shortcuts are executable
+  ansible.builtin.command: "bash -lc 'source {{ instructor_console_aliases }} && type -t {{ item.name | upper }}'"
+  loop: "{{ instructor_console_shortcuts }}"
+  loop_control:
+    label: "{{ item.name | upper }}"
+  register: instructor_console_shortcuts_check
+  changed_when: false
+  failed_when: instructor_console_shortcuts_check.stdout | trim != 'function'
+  when: instructor_console_shortcuts | length > 0
+
+- name: Verify instructor console shortcuts command results
+  ansible.builtin.assert:
+    that:
+      - instructor_console_shortcuts_check.results
+        | map(attribute='stdout')
+        | map('trim')
+        | select('ne', 'function')
+        | list
+        | length
+        | int
+        == 0
+  when: instructor_console_shortcuts | length > 0
+
+- name: Set instructor console user password
+  ansible.builtin.user:
+    name: ubuntu
+    password: "$6$KwA2liCXetrsNWS9$4xO8wI.cv1I04ykBwXqdM1XiG5Oz/cecVG4zK5..D6FZUNI.tQEDJYiq3CzlhIQu5W0RddFxtxLHXC6DpMq6e0"
+  become: true
+  no_log: true

@@ -1,0 +1,132 @@
+- name: Refresh apt cache on Ubuntu hosts
+  ansible.builtin.apt:
+    update_cache: true
+    cache_valid_time: 3600
+  when:
+    - ansible_os_family == "Debian"
+    - ansible_distribution == "Ubuntu"
+
+- name: Ensure nginx package is installed
+  ansible.builtin.package:
+    name: "{{ rep_core_nginx_package }}"
+    state: present
+
+- name: Ensure nginx service is enabled and started
+  ansible.builtin.service:
+    name: "{{ rep_core_nginx_service }}"
+    state: started
+    enabled: true
+  notify: reload nginx
+
+- name: Ensure REP directories exist
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0750"
+  loop:
+    - /etc/nginx/sites-available
+    - /etc/nginx/sites-enabled
+    - /etc/nginx/tls
+    - /etc/rep/credentials
+
+- name: Deploy REP core nginx configuration
+  ansible.builtin.template:
+    src: nginx-rep-core.conf.j2
+    dest: /etc/nginx/sites-available/rep_core.conf
+    owner: root
+    group: root
+    mode: "0640"
+  notify: reload nginx
+
+- name: Enable REP core virtual host
+  ansible.builtin.file:
+    src: /etc/nginx/sites-available/rep_core.conf
+    dest: /etc/nginx/sites-enabled/rep_core.conf
+    state: link
+  notify: reload nginx
+
+- name: Install TLS certificate for REP core
+  ansible.builtin.copy:
+    dest: "{{ rep_core_tls.certificate_path }}"
+    content: "{{ rep_core_tls.certificate_content }}"
+    owner: root
+    group: root
+    mode: "0640"
+  when:
+    - rep_core_tls_enabled | bool
+    - rep_core_tls.certificate_content | length > 0
+  notify: reload nginx
+
+- name: Install TLS private key for REP core
+  ansible.builtin.copy:
+    dest: "{{ rep_core_tls.key_path }}"
+    content: "{{ rep_core_tls.key_content }}"
+    owner: root
+    group: root
+    mode: "0600"
+  when:
+    - rep_core_tls_enabled | bool
+    - rep_core_tls.key_content | length > 0
+  notify: reload nginx
+  no_log: true
+
+- name: Ensure rep group exists
+  ansible.builtin.group:
+    name: rep
+    system: true
+
+- name: Ensure rep user exists
+  ansible.builtin.user:
+    name: rep
+    group: rep
+    system: true
+
+- name: Provision shared secret for internal APIs
+  ansible.builtin.copy:
+    dest: "{{ rep_core_shared_secret_file }}"
+    content: "{{ rep_core_shared_secret }}"
+    owner: root
+    group: rep
+    mode: "0640"
+  when: rep_core_shared_secret | length > 0
+  no_log: true
+
+- name: Flush pending handler notifications
+  ansible.builtin.meta: flush_handlers
+  when:
+    - rep_core_healthcheck is defined
+    - rep_core_healthcheck.url | length > 0
+    - rep_core_tls_enabled | bool
+
+- name: Wait for nginx service to become available
+  ansible.builtin.wait_for:
+    host: 127.0.0.1
+    port: "{{ rep_core_virtual_host.listen | int }}"
+    timeout: 30
+    sleep: 1
+  when:
+    - rep_core_healthcheck is defined
+    - rep_core_healthcheck.url | length > 0
+    - rep_core_tls_enabled | bool
+
+- name: Validate nginx configuration syntax
+  ansible.builtin.command: nginx -t
+  register: rep_core_nginx_check
+  changed_when: false
+  failed_when: rep_core_nginx_check.rc != 0
+
+- name: Check REP core health endpoint
+  ansible.builtin.uri:
+    url: "{{ rep_core_healthcheck.url }}"
+    method: GET
+    status_code: "{{ rep_core_healthcheck.status_code | int }}"
+    validate_certs: "{{ rep_core_healthcheck.validate_certs | bool }}"
+  register: rep_core_health
+  failed_when: rep_core_health.status != rep_core_healthcheck.status_code
+  changed_when: false
+  when:
+    - rep_core_healthcheck is defined
+    - rep_core_healthcheck.url | length > 0
+    - rep_core_tls_enabled | bool

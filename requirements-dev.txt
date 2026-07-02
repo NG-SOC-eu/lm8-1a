@@ -1,0 +1,4 @@
+pyyaml
+pytest
+jinja2
+passlib[bcrypt]

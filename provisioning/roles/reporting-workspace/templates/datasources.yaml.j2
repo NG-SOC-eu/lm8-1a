@@ -1,0 +1,18 @@
+apiVersion: 1
+
+datasources:
+{% for datasource in reporting_workspace_datasources %}
+  - name: {{ datasource.name }}
+    type: {{ datasource.type }}
+    url: {{ datasource.url }}
+    database: {{ datasource.database }}
+    user: {{ datasource.user }}
+    access: proxy
+    isDefault: {{ 'true' if loop.first else 'false' }}
+{% if datasource.secureJsonData is defined %}
+    secureJsonData:
+{% for key, value in datasource.secureJsonData.items() %}
+      {{ key }}: {{ value }}
+{% endfor %}
+{% endif %}
+{% endfor %}

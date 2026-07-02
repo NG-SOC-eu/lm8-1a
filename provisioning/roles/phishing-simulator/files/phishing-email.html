@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>IT Security Compliance Notice</title>
+  <style>
+    body { font-family: Arial, sans-serif; background: #f4f4f4; margin: 0; padding: 20px; }
+    .container { max-width: 600px; margin: auto; background: #fff; border: 1px solid #ddd; border-radius: 4px; }
+    .header { background: #c0392b; color: #fff; padding: 16px 24px; }
+    .header h2 { margin: 0; font-size: 18px; }
+    .body { padding: 24px; color: #333; line-height: 1.6; }
+    .cta { display: inline-block; margin: 16px 0; padding: 12px 24px;
+           background: #c0392b; color: #fff; text-decoration: none;
+           border-radius: 4px; font-weight: bold; }
+    .footer { background: #f4f4f4; padding: 12px 24px; font-size: 12px; color: #888;
+              border-top: 1px solid #ddd; }
+  </style>
+</head>
+<body>
+<div class="container">
+  <div class="header">
+    <h2>&#9888; URGENT: IT Security Compliance Action Required</h2>
+  </div>
+  <div class="body">
+    <!-- GoPhish template variables use {{.Variable}} Go-template syntax -->
+    <p>Dear {{.FirstName}},</p>
+    <p>Our automated security compliance system has flagged your account for
+    <strong>immediate verification</strong>. Failure to complete this process
+    within <strong>24 hours</strong> will result in temporary account suspension
+    in accordance with policy SEC-2024-11.</p>
+    <p>Issues detected:</p>
+    <ul>
+      <li>Unreviewed security policy acknowledgement (overdue 7 days)</li>
+      <li>Multi-factor authentication status: pending re-verification</li>
+    </ul>
+    <p>Please click the button below to verify your compliance status:</p>
+    <a href="{{.URL}}" class="cta">Verify Compliance Now</a>
+    <!-- Intentional distractor: SEC-{{.RId}} is a per-recipient GoPhish RId, NOT
+         the security policy code. Training level 18 expects the fixed policy
+         reference SEC-2024-11 from the paragraph above. Do not remove this line:
+         distinguishing the real policy code from this look-alike is part of the
+         exercise. -->
+    <p>If you believe this message was sent in error, contact the IT Security
+    helpdesk at <em>security@company.internal</em> and quote reference
+    <strong>SEC-{{.RId}}</strong>.</p>
+  </div>
+  <div class="footer">
+    This message was sent by the IT Security Compliance System on behalf of
+    {{.From}}. Do not reply to this email.
+    <!-- GoPhish tracking pixel -->
+    <img src="{{.TrackingURL}}" alt="" width="1" height="1"/>
+  </div>
+</div>
+</body>
+</html>
